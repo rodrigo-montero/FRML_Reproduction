@@ -381,51 +381,69 @@ class MuLRE:
             for w_in, w_rec in zip(self.w_in_list, self.w_rec_list)
         ])
 
-    def transform(self, X):
-        """X: (N, T, H*W*pol) -> (N, total_reservoir_size)"""
-        # Preprocess the entire dataset with Gabor in one batched FFT call.
-        # We treat (N*T*polarities) as one big frame batch, compute FFTs once,
-        # then filter with each of the 18 kernels in a single rfft2 multiply.
+    def transform(self, X, chunk_size=500):
+        """
+        X: (N, T, H*W*pol) -> (N, total_reservoir_size)
+
+        Gabor features are computed in chunks to cap peak memory usage.
+        The full expanded representation (N * T * H * W * pol * n_filters)
+        is never materialised at once.
+
+        Peak RAM per chunk ~ chunk_size * T * pol * n_filters * H * W * 4 bytes
+            e.g. chunk_size=50: 50 * 90 * 2 * 18 * 34 * 34 * 4 ~ 200 MB
+
+        Args:
+            chunk_size: samples processed together. Lower = less memory.
+                        50 is safe well within 30 GB/core; raise if you want speed.
+        """
+        from numpy.fft import rfft2, irfft2
+
+        H, W, polarities = self.input_shape
+        N = len(X)
+        n_filters = self.gabor_kernels.shape[0] if self.use_gabor else 0
+
+        # Pre-compute kernel FFTs once - reused for every chunk
         if self.use_gabor:
-            print("  Applying Gabor filter bank to dataset...", flush=True)
-            from numpy.fft import rfft2, irfft2
-
-            H, W, polarities = self.input_shape
-            N, T, _ = X.shape
-            n_filters = self.gabor_kernels.shape[0]
-
-            # (N*T*pol, H, W)
-            x_all = X.reshape(N * T, H, W, polarities).transpose(0, 3, 1, 2).reshape(-1, H, W)
-            B = x_all.shape[0]
-
-            # FFT of every frame once
-            X_f = rfft2(x_all, s=(H, W))   # (B, H, W//2+1)
-
-            responses = np.empty((n_filters, B, H, W), dtype=np.float32)
+            K_fs = []
             for f in range(n_filters):
                 k_pad = np.zeros((H, W), dtype=np.float32)
                 kh, kw = self.gabor_kernels[f].shape
                 k_pad[:kh, :kw] = self.gabor_kernels[f]
-                K_f = rfft2(k_pad, s=(H, W))
-                resp = irfft2(X_f * K_f[None], s=(H, W)).astype(np.float32)
-                np.maximum(resp, 0.0, out=resp)
-                responses[f] = resp
-
-            # -> (N, T, H, W, pol, F) -> (N, T, H*W*pol*F)
-            responses = responses.transpose(1, 2, 3, 0)                  # (B, H, W, F)
-            responses = responses.reshape(N, T, polarities, H, W, n_filters)
-            responses = responses.transpose(0, 1, 3, 4, 2, 5)            # (N, T, H, W, pol, F)
-            X_proc = responses.reshape(N, T, -1).astype(np.float32)
-            print("  Gabor done.", flush=True)
-        else:
-            X_proc = X
+                K_fs.append(rfft2(k_pad, s=(H, W)))
 
         features = []
-        for i, x in enumerate(X_proc):
-            features.append(np.concatenate([
-                self._run_single_reservoir(x, w_in, w_rec)
-                for w_in, w_rec in zip(self.w_in_list, self.w_rec_list)
-            ]))
-            if (i + 1) % 100 == 0:
-                print(f"  Transformed {i + 1}/{len(X_proc)} samples", flush=True)
+        for start in range(0, N, chunk_size):
+            end = min(start + chunk_size, N)
+            chunk = X[start:end]  # (C, T, H*W*pol)
+            C, T, _ = chunk.shape
+
+            if self.use_gabor:
+                # (C*T*pol, H, W) - only this chunk in memory at once
+                x_all = (chunk.reshape(C * T, H, W, polarities)
+                         .transpose(0, 3, 1, 2)
+                         .reshape(-1, H, W))
+                X_f = rfft2(x_all, s=(H, W))
+
+                responses = np.empty((n_filters, x_all.shape[0], H, W), dtype=np.float32)
+                for f in range(n_filters):
+                    resp = irfft2(X_f * K_fs[f][None], s=(H, W)).astype(np.float32)
+                    np.maximum(resp, 0.0, out=resp)
+                    responses[f] = resp
+
+                # -> (C, T, H, W, pol, F) -> (C, T, H*W*pol*F)
+                responses = responses.transpose(1, 2, 3, 0)
+                responses = responses.reshape(C, T, polarities, H, W, n_filters)
+                responses = responses.transpose(0, 1, 3, 4, 2, 5)
+                chunk_proc = responses.reshape(C, T, -1).astype(np.float32)
+            else:
+                chunk_proc = chunk
+
+            for x in chunk_proc:
+                features.append(np.concatenate([
+                    self._run_single_reservoir(x, w_in, w_rec)
+                    for w_in, w_rec in zip(self.w_in_list, self.w_rec_list)
+                ]))
+
+            print(f"  Transformed {end}/{N} samples", flush=True)
+
         return np.stack(features)

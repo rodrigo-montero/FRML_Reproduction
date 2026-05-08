@@ -1,0 +1,442 @@
+Python used:
+/scratch/rmonterogonzal/FRML_Reproduction/.venv/bin/python
+Python 3.11.9
+Testing imports:
+imports ok
+Starting experiment:
+Loading N-MNIST train subset...
+Loaded 100/30000 samples
+Loaded 200/30000 samples
+Loaded 300/30000 samples
+Loaded 400/30000 samples
+Loaded 500/30000 samples
+Loaded 600/30000 samples
+Loaded 700/30000 samples
+Loaded 800/30000 samples
+Loaded 900/30000 samples
+Loaded 1000/30000 samples
+Loaded 1100/30000 samples
+Loaded 1200/30000 samples
+Loaded 1300/30000 samples
+Loaded 1400/30000 samples
+Loaded 1500/30000 samples
+Loaded 1600/30000 samples
+Loaded 1700/30000 samples
+Loaded 1800/30000 samples
+Loaded 1900/30000 samples
+Loaded 2000/30000 samples
+Loaded 2100/30000 samples
+Loaded 2200/30000 samples
+Loaded 2300/30000 samples
+Loaded 2400/30000 samples
+Loaded 2500/30000 samples
+Loaded 2600/30000 samples
+Loaded 2700/30000 samples
+Loaded 2800/30000 samples
+Loaded 2900/30000 samples
+Loaded 3000/30000 samples
+Loaded 3100/30000 samples
+Loaded 3200/30000 samples
+Loaded 3300/30000 samples
+Loaded 3400/30000 samples
+Loaded 3500/30000 samples
+Loaded 3600/30000 samples
+Loaded 3700/30000 samples
+Loaded 3800/30000 samples
+Loaded 3900/30000 samples
+Loaded 4000/30000 samples
+Loaded 4100/30000 samples
+Loaded 4200/30000 samples
+Loaded 4300/30000 samples
+Loaded 4400/30000 samples
+Loaded 4500/30000 samples
+Loaded 4600/30000 samples
+Loaded 4700/30000 samples
+Loaded 4800/30000 samples
+Loaded 4900/30000 samples
+Loaded 5000/30000 samples
+Loaded 5100/30000 samples
+Loaded 5200/30000 samples
+Loaded 5300/30000 samples
+Loaded 5400/30000 samples
+Loaded 5500/30000 samples
+Loaded 5600/30000 samples
+Loaded 5700/30000 samples
+Loaded 5800/30000 samples
+Loaded 5900/30000 samples
+Loaded 6000/30000 samples
+Loaded 6100/30000 samples
+Loaded 6200/30000 samples
+Loaded 6300/30000 samples
+Loaded 6400/30000 samples
+Loaded 6500/30000 samples
+Loaded 6600/30000 samples
+Loaded 6700/30000 samples
+Loaded 6800/30000 samples
+Loaded 6900/30000 samples
+Loaded 7000/30000 samples
+Loaded 7100/30000 samples
+Loaded 7200/30000 samples
+Loaded 7300/30000 samples
+Loaded 7400/30000 samples
+Loaded 7500/30000 samples
+Loaded 7600/30000 samples
+Loaded 7700/30000 samples
+Loaded 7800/30000 samples
+Loaded 7900/30000 samples
+Loaded 8000/30000 samples
+Loaded 8100/30000 samples
+Loaded 8200/30000 samples
+Loaded 8300/30000 samples
+Loaded 8400/30000 samples
+Loaded 8500/30000 samples
+Loaded 8600/30000 samples
+Loaded 8700/30000 samples
+Loaded 8800/30000 samples
+Loaded 8900/30000 samples
+Loaded 9000/30000 samples
+Loaded 9100/30000 samples
+Loaded 9200/30000 samples
+Loaded 9300/30000 samples
+Loaded 9400/30000 samples
+Loaded 9500/30000 samples
+Loaded 9600/30000 samples
+Loaded 9700/30000 samples
+Loaded 9800/30000 samples
+Loaded 9900/30000 samples
+Loaded 10000/30000 samples
+Loaded 10100/30000 samples
+Loaded 10200/30000 samples
+Loaded 10300/30000 samples
+Loaded 10400/30000 samples
+Loaded 10500/30000 samples
+Loaded 10600/30000 samples
+Loaded 10700/30000 samples
+Loaded 10800/30000 samples
+Loaded 10900/30000 samples
+Loaded 11000/30000 samples
+Loaded 11100/30000 samples
+Loaded 11200/30000 samples
+Loaded 11300/30000 samples
+Loaded 11400/30000 samples
+Loaded 11500/30000 samples
+Loaded 11600/30000 samples
+Loaded 11700/30000 samples
+Loaded 11800/30000 samples
+Loaded 11900/30000 samples
+Loaded 12000/30000 samples
+Loaded 12100/30000 samples
+Loaded 12200/30000 samples
+Loaded 12300/30000 samples
+Loaded 12400/30000 samples
+Loaded 12500/30000 samples
+Loaded 12600/30000 samples
+Loaded 12700/30000 samples
+Loaded 12800/30000 samples
+Loaded 12900/30000 samples
+Loaded 13000/30000 samples
+Loaded 13100/30000 samples
+Loaded 13200/30000 samples
+Loaded 13300/30000 samples
+Loaded 13400/30000 samples
+Loaded 13500/30000 samples
+Loaded 13600/30000 samples
+Loaded 13700/30000 samples
+Loaded 13800/30000 samples
+Loaded 13900/30000 samples
+Loaded 14000/30000 samples
+Loaded 14100/30000 samples
+Loaded 14200/30000 samples
+Loaded 14300/30000 samples
+Loaded 14400/30000 samples
+Loaded 14500/30000 samples
+Loaded 14600/30000 samples
+Loaded 14700/30000 samples
+Loaded 14800/30000 samples
+Loaded 14900/30000 samples
+Loaded 15000/30000 samples
+Loaded 15100/30000 samples
+Loaded 15200/30000 samples
+Loaded 15300/30000 samples
+Loaded 15400/30000 samples
+Loaded 15500/30000 samples
+Loaded 15600/30000 samples
+Loaded 15700/30000 samples
+Loaded 15800/30000 samples
+Loaded 15900/30000 samples
+Loaded 16000/30000 samples
+Loaded 16100/30000 samples
+Loaded 16200/30000 samples
+Loaded 16300/30000 samples
+Loaded 16400/30000 samples
+Loaded 16500/30000 samples
+Loaded 16600/30000 samples
+Loaded 16700/30000 samples
+Loaded 16800/30000 samples
+Loaded 16900/30000 samples
+Loaded 17000/30000 samples
+Loaded 17100/30000 samples
+Loaded 17200/30000 samples
+Loaded 17300/30000 samples
+Loaded 17400/30000 samples
+Loaded 17500/30000 samples
+Loaded 17600/30000 samples
+Loaded 17700/30000 samples
+Loaded 17800/30000 samples
+Loaded 17900/30000 samples
+Loaded 18000/30000 samples
+Loaded 18100/30000 samples
+Loaded 18200/30000 samples
+Loaded 18300/30000 samples
+Loaded 18400/30000 samples
+Loaded 18500/30000 samples
+Loaded 18600/30000 samples
+Loaded 18700/30000 samples
+Loaded 18800/30000 samples
+Loaded 18900/30000 samples
+Loaded 19000/30000 samples
+Loaded 19100/30000 samples
+Loaded 19200/30000 samples
+Loaded 19300/30000 samples
+Loaded 19400/30000 samples
+Loaded 19500/30000 samples
+Loaded 19600/30000 samples
+Loaded 19700/30000 samples
+Loaded 19800/30000 samples
+Loaded 19900/30000 samples
+Loaded 20000/30000 samples
+Loaded 20100/30000 samples
+Loaded 20200/30000 samples
+Loaded 20300/30000 samples
+Loaded 20400/30000 samples
+Loaded 20500/30000 samples
+Loaded 20600/30000 samples
+Loaded 20700/30000 samples
+Loaded 20800/30000 samples
+Loaded 20900/30000 samples
+Loaded 21000/30000 samples
+Loaded 21100/30000 samples
+Loaded 21200/30000 samples
+Loaded 21300/30000 samples
+Loaded 21400/30000 samples
+Loaded 21500/30000 samples
+Loaded 21600/30000 samples
+Loaded 21700/30000 samples
+Loaded 21800/30000 samples
+Loaded 21900/30000 samples
+Loaded 22000/30000 samples
+Loaded 22100/30000 samples
+Loaded 22200/30000 samples
+Loaded 22300/30000 samples
+Loaded 22400/30000 samples
+Loaded 22500/30000 samples
+Loaded 22600/30000 samples
+Loaded 22700/30000 samples
+Loaded 22800/30000 samples
+Loaded 22900/30000 samples
+Loaded 23000/30000 samples
+Loaded 23100/30000 samples
+Loaded 23200/30000 samples
+Loaded 23300/30000 samples
+Loaded 23400/30000 samples
+Loaded 23500/30000 samples
+Loaded 23600/30000 samples
+Loaded 23700/30000 samples
+Loaded 23800/30000 samples
+Loaded 23900/30000 samples
+Loaded 24000/30000 samples
+Loaded 24100/30000 samples
+Loaded 24200/30000 samples
+Loaded 24300/30000 samples
+Loaded 24400/30000 samples
+Loaded 24500/30000 samples
+Loaded 24600/30000 samples
+Loaded 24700/30000 samples
+Loaded 24800/30000 samples
+Loaded 24900/30000 samples
+Loaded 25000/30000 samples
+Loaded 25100/30000 samples
+Loaded 25200/30000 samples
+Loaded 25300/30000 samples
+Loaded 25400/30000 samples
+Loaded 25500/30000 samples
+Loaded 25600/30000 samples
+Loaded 25700/30000 samples
+Loaded 25800/30000 samples
+Loaded 25900/30000 samples
+Loaded 26000/30000 samples
+Loaded 26100/30000 samples
+Loaded 26200/30000 samples
+Loaded 26300/30000 samples
+Loaded 26400/30000 samples
+Loaded 26500/30000 samples
+Loaded 26600/30000 samples
+Loaded 26700/30000 samples
+Loaded 26800/30000 samples
+Loaded 26900/30000 samples
+Loaded 27000/30000 samples
+Loaded 27100/30000 samples
+Loaded 27200/30000 samples
+Loaded 27300/30000 samples
+Loaded 27400/30000 samples
+Loaded 27500/30000 samples
+Loaded 27600/30000 samples
+Loaded 27700/30000 samples
+Loaded 27800/30000 samples
+Loaded 27900/30000 samples
+Loaded 28000/30000 samples
+Loaded 28100/30000 samples
+Loaded 28200/30000 samples
+Loaded 28300/30000 samples
+Loaded 28400/30000 samples
+Loaded 28500/30000 samples
+Loaded 28600/30000 samples
+Loaded 28700/30000 samples
+Loaded 28800/30000 samples
+Loaded 28900/30000 samples
+Loaded 29000/30000 samples
+Loaded 29100/30000 samples
+Loaded 29200/30000 samples
+Loaded 29300/30000 samples
+Loaded 29400/30000 samples
+Loaded 29500/30000 samples
+Loaded 29600/30000 samples
+Loaded 29700/30000 samples
+Loaded 29800/30000 samples
+Loaded 29900/30000 samples
+Loaded 30000/30000 samples
+Loading N-MNIST test subset...
+Loaded 100/5000 samples
+Loaded 200/5000 samples
+Loaded 300/5000 samples
+Loaded 400/5000 samples
+Loaded 500/5000 samples
+Loaded 600/5000 samples
+Loaded 700/5000 samples
+Loaded 800/5000 samples
+Loaded 900/5000 samples
+Loaded 1000/5000 samples
+Loaded 1100/5000 samples
+Loaded 1200/5000 samples
+Loaded 1300/5000 samples
+Loaded 1400/5000 samples
+Loaded 1500/5000 samples
+Loaded 1600/5000 samples
+Loaded 1700/5000 samples
+Loaded 1800/5000 samples
+Loaded 1900/5000 samples
+Loaded 2000/5000 samples
+Loaded 2100/5000 samples
+Loaded 2200/5000 samples
+Loaded 2300/5000 samples
+Loaded 2400/5000 samples
+Loaded 2500/5000 samples
+Loaded 2600/5000 samples
+Loaded 2700/5000 samples
+Loaded 2800/5000 samples
+Loaded 2900/5000 samples
+Loaded 3000/5000 samples
+Loaded 3100/5000 samples
+Loaded 3200/5000 samples
+Loaded 3300/5000 samples
+Loaded 3400/5000 samples
+Loaded 3500/5000 samples
+Loaded 3600/5000 samples
+Loaded 3700/5000 samples
+Loaded 3800/5000 samples
+Loaded 3900/5000 samples
+Loaded 4000/5000 samples
+Loaded 4100/5000 samples
+Loaded 4200/5000 samples
+Loaded 4300/5000 samples
+Loaded 4400/5000 samples
+Loaded 4500/5000 samples
+Loaded 4600/5000 samples
+Loaded 4700/5000 samples
+Loaded 4800/5000 samples
+Loaded 4900/5000 samples
+Loaded 5000/5000 samples
+Train labels: [2950 3421 3008 2987 2994 2716 2914 3142 2877 2991]
+Test labels: [490 559 542 526 486 423 492 494 471 517]
+Input shape: (30000, 90, 2312)
+Creating MuLRE...
+Transforming train data...
+  Transformed 500/30000 samples
+  Transformed 1000/30000 samples
+  Transformed 1500/30000 samples
+  Transformed 2000/30000 samples
+  Transformed 2500/30000 samples
+  Transformed 3000/30000 samples
+  Transformed 3500/30000 samples
+  Transformed 4000/30000 samples
+  Transformed 4500/30000 samples
+  Transformed 5000/30000 samples
+  Transformed 5500/30000 samples
+  Transformed 6000/30000 samples
+  Transformed 6500/30000 samples
+  Transformed 7000/30000 samples
+  Transformed 7500/30000 samples
+  Transformed 8000/30000 samples
+  Transformed 8500/30000 samples
+  Transformed 9000/30000 samples
+  Transformed 9500/30000 samples
+  Transformed 10000/30000 samples
+  Transformed 10500/30000 samples
+  Transformed 11000/30000 samples
+  Transformed 11500/30000 samples
+  Transformed 12000/30000 samples
+  Transformed 12500/30000 samples
+  Transformed 13000/30000 samples
+  Transformed 13500/30000 samples
+  Transformed 14000/30000 samples
+  Transformed 14500/30000 samples
+  Transformed 15000/30000 samples
+  Transformed 15500/30000 samples
+  Transformed 16000/30000 samples
+  Transformed 16500/30000 samples
+  Transformed 17000/30000 samples
+  Transformed 17500/30000 samples
+  Transformed 18000/30000 samples
+  Transformed 18500/30000 samples
+  Transformed 19000/30000 samples
+  Transformed 19500/30000 samples
+  Transformed 20000/30000 samples
+  Transformed 20500/30000 samples
+  Transformed 21000/30000 samples
+  Transformed 21500/30000 samples
+  Transformed 22000/30000 samples
+  Transformed 22500/30000 samples
+  Transformed 23000/30000 samples
+  Transformed 23500/30000 samples
+  Transformed 24000/30000 samples
+  Transformed 24500/30000 samples
+  Transformed 25000/30000 samples
+  Transformed 25500/30000 samples
+  Transformed 26000/30000 samples
+  Transformed 26500/30000 samples
+  Transformed 27000/30000 samples
+  Transformed 27500/30000 samples
+  Transformed 28000/30000 samples
+  Transformed 28500/30000 samples
+  Transformed 29000/30000 samples
+  Transformed 29500/30000 samples
+  Transformed 30000/30000 samples
+Transforming test data...
+  Transformed 500/5000 samples
+  Transformed 1000/5000 samples
+  Transformed 1500/5000 samples
+  Transformed 2000/5000 samples
+  Transformed 2500/5000 samples
+  Transformed 3000/5000 samples
+  Transformed 3500/5000 samples
+  Transformed 4000/5000 samples
+  Transformed 4500/5000 samples
+  Transformed 5000/5000 samples
+Feature shape train: (30000, 3600)
+Feature shape test: (5000, 3600)
+Mean train feature activity: 51.752518
+Max train feature activity: 90.0
+Nonzero train feature fraction: 0.7750640462962963
+Training linear classifier...
+N-MNIST MuLRE accuracy: 97.76%
+Saved results to /scratch/rmonterogonzal/FRML_Reproduction/results/nmnist_mulre.json

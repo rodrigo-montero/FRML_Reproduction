@@ -1,0 +1,17 @@
+{
+    "experiment": "nmnist-mulre",
+    "accuracy": 0.9776,
+    "train_samples": 30000,
+    "test_samples": 5000,
+    "seed": 42,
+    "timestamp": "2026-05-07T22:12:04.436311",
+    "model": {
+        "total_reservoir_size": 3600,
+        "tau_v": 16.0,
+        "tau_u": 16.0,
+        "threshold": 20.0,
+        "input_density": 0.02,
+        "input_weight": 1.0,
+        "lambda_param": 3.0
+    }
+}
