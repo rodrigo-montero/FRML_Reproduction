@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=dvsgesture-lsm-standard
-#SBATCH --time=06:00:00
+#SBATCH --time=010:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=memory
