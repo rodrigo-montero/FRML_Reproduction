@@ -10,7 +10,7 @@ import random
 import json
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -20,10 +20,7 @@ from src.models.mulre import MuLRE
 
 DATA_PATH = PROJECT_ROOT / "data" / "raw"
 
-SEED = 42
-
-random.seed(SEED)
-np.random.seed(SEED)
+SEEDS = [21, 42, 67]
 
 
 def save_results(results, filename):
@@ -40,7 +37,6 @@ def load_subset(train=True, n_samples=1000, n_time_bins=90, seed=42):
         save_to=str(DATA_PATH),
         train=train
     )
-
     rng = np.random.default_rng(seed)
     indices = rng.choice(len(dataset), size=min(n_samples, len(dataset)), replace=False)
 
@@ -50,59 +46,45 @@ def load_subset(train=True, n_samples=1000, n_time_bins=90, seed=42):
         frames = events_to_frames(
             events,
             sensor_size=(34, 34, 2),
-            n_time_bins=n_time_bins
+            n_time_bins=n_time_bins,
         )
         X.append(frames)
         y.append(label)
         if (count + 1) % 100 == 0:
-            print(f"Loaded {count + 1}/{len(indices)} samples")
+            print(f"  Loaded {count + 1}/{len(indices)} samples")
 
     return np.stack(X), np.array(y)
 
 
-def main():
-    # ---- Dataset config ----
-    n_time_bins = 90
-    train_size  = 60000
-    test_size   = 10000
-    input_shape = (34, 34, 2)
+def run_seed(seed, X_train, y_train, X_test, y_test):
+    """Full pipeline for one seed: build model, transform, classify."""
+    random.seed(seed)
+    np.random.seed(seed)
 
     # ---- Paper-specified hyperparameters ----
+    input_shape          = (34, 34, 2)
     total_reservoir_size = 3600
     n_reservoirs         = 3
-    grid_shape           = (10, 10, 12)   # 10*10*12 = 1200 per reservoir
-    d_values             = [0, 4, 6]      # paper: 3-reservoir MuLRE
-    receptive_field_size = 6              # paper: "5 or 6"
-    threshold            = 20.0           # paper: theta = 20
-    tau_v                = 16.0           # paper: tau_v = 16 for N-MNIST
-    tau_u                = 16.0           # paper: tau_u = 16 for N-MNIST
-    reservoir_weight     = 1.0            # paper: w_lsm = 1
+    grid_shape           = (10, 10, 12)
+    d_values             = [0, 4, 6]
+    receptive_field_size = 6
+    threshold            = 20.0
+    tau_v                = 16.0
+    tau_u                = 16.0
+    reservoir_weight     = 1.0
 
     # ---- Author's code hyperparameters (not in paper) ----
-    lambda_param     = 9.0    # author's initWeights calls use lam=9
-    inh_fraction     = 0.2    # author: inh_fr=0.2
-    input_density    = 0.02   # author: in_conn_density=0.02 (approx)
-    input_weight     = 1.0    # author: LqWin=1 (before curr_prefac scaling)
+    lambda_param     = 9.0
+    inh_fraction     = 0.2
+    input_density    = 0.02
+    input_weight     = 1.0
+    gabor_thetas     = [0, 20, 40, 60, 80, 100, 120, 140, 160]
+    gabor_lambdas    = [5.0, 10.0]
+    gabor_ksize      = 5
+    gabor_sigma      = 10.0
+    gabor_gamma      = 0.5
 
-    # Gabor: author uses cv2.getGaborKernel, ksize=5, sigma=10, gamma=0.5, phi=pi/2
-    # 9 theta values × 2 lambda values = 18 filters (paper: 18 Gabor filters)
-    gabor_thetas  = [0, 20, 40, 60, 80, 100, 120, 140, 160]
-    gabor_lambdas = [5.0, 10.0]
-    gabor_ksize   = 5
-    gabor_sigma   = 10.0
-    gabor_gamma   = 0.5
-
-    print("Loading N-MNIST train subset...")
-    X_train, y_train = load_subset(train=True,  n_samples=train_size, n_time_bins=n_time_bins, seed=SEED)
-
-    print("Loading N-MNIST test subset...")
-    X_test,  y_test  = load_subset(train=False, n_samples=test_size,  n_time_bins=n_time_bins, seed=SEED)
-
-    print("Train labels:", np.bincount(y_train, minlength=10))
-    print("Test labels: ", np.bincount(y_test,  minlength=10))
-    print("Input shape: ", X_train.shape)
-
-    print("Creating MuLRE...")
+    print(f"\n  Building MuLRE (seed={seed})...")
     mulre = MuLRE(
         input_shape=input_shape,
         total_reservoir_size=total_reservoir_size,
@@ -118,7 +100,7 @@ def main():
         threshold=threshold,
         tau_v=tau_v,
         tau_u=tau_u,
-        seed=SEED,
+        seed=seed,
         use_gabor=True,
         gabor_thetas=gabor_thetas,
         gabor_lambdas=gabor_lambdas,
@@ -127,62 +109,171 @@ def main():
         gabor_gamma=gabor_gamma,
     )
 
-    print("Transforming train data...")
+    print(f"  Transforming train data (seed={seed})...")
     Z_train = mulre.transform(X_train)
 
-    print("Transforming test data...")
+    print(f"  Transforming test data (seed={seed})...")
     Z_test = mulre.transform(X_test)
 
-    print("Feature shape train:", Z_train.shape)
-    print("Feature shape test: ", Z_test.shape)
-    print("Mean train feature activity:", Z_train.mean())
-    print("Max  train feature activity:", Z_train.max())
-    print("Nonzero fraction (train):   ", (Z_train > 0).mean())
-
-    print("Training linear classifier...")
+    print(f"  Training classifier (seed={seed})...")
     clf = make_pipeline(
         StandardScaler(),
         LogisticRegression(
             max_iter=3000,
             n_jobs=-1,
             solver="lbfgs",
-            random_state=SEED,
+            random_state=seed,
         )
     )
     clf.fit(Z_train, y_train)
 
     preds = clf.predict(Z_test)
     acc   = accuracy_score(y_test, preds)
-    print(f"N-MNIST MuLRE accuracy: {acc * 100:.2f}%")
+    cm    = confusion_matrix(y_test, preds)
 
-    results = {
-        "experiment":    "nmnist-mulre",
-        "accuracy":      float(acc),
-        "train_samples": int(len(y_train)),
-        "test_samples":  int(len(y_test)),
-        "seed":          SEED,
-        "timestamp":     datetime.now().isoformat(),
-        "model": {
-            "total_reservoir_size": total_reservoir_size,
-            "n_reservoirs":         n_reservoirs,
-            "d_values":             d_values,
-            "tau_v":                tau_v,
-            "tau_u":                tau_u,
-            "threshold":            threshold,
-            "lambda_param":         lambda_param,
-            "inh_fraction":         inh_fraction,
-            "input_density":        input_density,
-            "input_weight":         input_weight,
-            "receptive_field_size": receptive_field_size,
-        }
+    # Per-class accuracy (diagonal / row sums)
+    per_class_acc = cm.diagonal() / cm.sum(axis=1)
+
+    # Feature statistics (reservoir health indicators)
+    feat_stats = {
+        "mean_spike_count":     float(Z_train.mean()),
+        "max_spike_count":      float(Z_train.max()),
+        "nonzero_fraction":     float((Z_train > 0).mean()),
+        "dead_neuron_fraction": float((Z_train.max(axis=0) == 0).mean()),
+        "feature_std_mean":     float(Z_train.std(axis=0).mean()),
     }
 
-    save_results(results, "nmnist_mulre.json")
-    np.savez(
-        PROJECT_ROOT / "results" / "nmnist_mulre_predictions.npz",
-        y_true=y_test,
-        y_pred=preds,
-    )
+    print(f"  Seed {seed} accuracy: {acc * 100:.2f}%")
+
+    return {
+        "seed":               seed,
+        "accuracy":           float(acc),
+        "per_class_accuracy": per_class_acc.tolist(),
+        "confusion_matrix":   cm.tolist(),
+        "feature_stats":      feat_stats,
+        "predictions":        preds,
+    }
+
+
+def main():
+    n_time_bins = 90
+    train_size  = 60000
+    test_size   = 10000
+
+    # ---- Multi-seed runs ----
+    all_results = []
+    for seed in SEEDS:
+        print(f"\n{'='*55}")
+        print(f"  SEED {seed}")
+        print(f"{'='*55}")
+        print("Loading N-MNIST train subset...")
+        X_train, y_train = load_subset(train=True, n_samples=train_size, n_time_bins=n_time_bins, seed=42)
+
+        print("Loading N-MNIST test subset...")
+        X_test, y_test = load_subset(train=False, n_samples=test_size, n_time_bins=n_time_bins, seed=42)
+
+        print(f"Train labels: {np.bincount(y_train, minlength=10)}")
+        print(f"Test labels:  {np.bincount(y_test, minlength=10)}")
+        print(f"Input shape:  {X_train.shape}")
+        result = run_seed(seed, X_train, y_train, X_test, y_test)
+        all_results.append(result)
+
+    # ---- Aggregate statistics ----
+    accuracies = [r["accuracy"] for r in all_results]
+    mean_acc   = float(np.mean(accuracies))
+    std_acc    = float(np.std(accuracies))
+    min_acc    = float(np.min(accuracies))
+    max_acc    = float(np.max(accuracies))
+    best_seed  = SEEDS[int(np.argmax(accuracies))]
+
+    # Per-class accuracy across seeds
+    per_class_accs  = np.array([r["per_class_accuracy"] for r in all_results])
+    mean_per_class  = per_class_accs.mean(axis=0).tolist()
+    std_per_class   = per_class_accs.std(axis=0).tolist()
+    worst_class     = int(np.argmin(mean_per_class))
+    best_class      = int(np.argmax(mean_per_class))
+
+    # Mean feature stats across seeds
+    feat_keys = all_results[0]["feature_stats"].keys()
+    mean_feat_stats = {
+        k: float(np.mean([r["feature_stats"][k] for r in all_results]))
+        for k in feat_keys
+    }
+
+    print(f"\n{'='*55}")
+    print(f"  MULTI-SEED SUMMARY  (N-MNIST MuLRE)")
+    print(f"{'='*55}")
+    for r in all_results:
+        print(f"  Seed {r['seed']:>3d}:  {r['accuracy']*100:.2f}%")
+    print(f"  -----------------------------------------------")
+    print(f"  Mean ± Std:  {mean_acc*100:.2f}% ± {std_acc*100:.2f}%")
+    print(f"  Min / Max:   {min_acc*100:.2f}% / {max_acc*100:.2f}%")
+    print(f"  Best seed:   {best_seed}")
+    print(f"  Worst class (mean): digit {worst_class}  ({mean_per_class[worst_class]*100:.2f}%)")
+    print(f"  Best  class (mean): digit {best_class}   ({mean_per_class[best_class]*100:.2f}%)")
+
+    # ---- Save ----
+    summary = {
+        "experiment": "nmnist-mulre-multiseed",
+        "seeds":      SEEDS,
+        "timestamp":  datetime.now().isoformat(),
+        "per_seed": [
+            {
+                "seed":               r["seed"],
+                "accuracy":           r["accuracy"],
+                "per_class_accuracy": r["per_class_accuracy"],
+                "confusion_matrix":   r["confusion_matrix"],
+                "feature_stats":      r["feature_stats"],
+            }
+            for r in all_results
+        ],
+        "aggregate": {
+            "mean_accuracy":           mean_acc,
+            "std_accuracy":            std_acc,
+            "min_accuracy":            min_acc,
+            "max_accuracy":            max_acc,
+            "best_seed":               best_seed,
+            "mean_per_class_accuracy": mean_per_class,
+            "std_per_class_accuracy":  std_per_class,
+            "worst_class":             worst_class,
+            "best_class":              best_class,
+            "mean_feature_stats":      mean_feat_stats,
+        },
+        "dataset": {
+            "train_samples": int(len(y_train)),
+            "test_samples":  int(len(y_test)),
+            "n_time_bins":   n_time_bins,
+        },
+        "model": {
+            "total_reservoir_size": 3600,
+            "n_reservoirs":         3,
+            "d_values":             [0, 4, 6],
+            "tau_v":                16.0,
+            "tau_u":                16.0,
+            "threshold":            20.0,
+            "lambda_param":         9.0,
+            "inh_fraction":         0.2,
+            "input_density":        0.02,
+            "receptive_field_size": 6,
+            "gabor_filters":        18,
+            "gabor_ksize":          5,
+            "gabor_sigma":          10.0,
+            "gabor_gamma":          0.5,
+        },
+    }
+
+    save_results(summary, "nmnist_mulre_multiseed.json")
+
+    # Save per-seed predictions + confusion matrices
+    for r in all_results:
+        np.savez(
+            PROJECT_ROOT / "results" / f"nmnist_mulre_seed{r['seed']}_predictions.npz",
+            y_true=y_test,
+            y_pred=r["predictions"],
+            confusion_matrix=np.array(r["confusion_matrix"]),
+        )
+
+    print("\nAll results saved.")
 
 
 if __name__ == "__main__":
