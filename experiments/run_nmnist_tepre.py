@@ -25,17 +25,14 @@ SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 
+
 def save_results(results, filename):
     results_dir = PROJECT_ROOT / "results"
     results_dir.mkdir(exist_ok=True)
-
     path = results_dir / filename
-
     with open(path, "w") as f:
         json.dump(results, f, indent=4)
-
     print(f"Saved results to {path}")
-
 
 
 def load_subset(train=True, n_samples=1000, n_time_bins=90, seed=42):
@@ -47,15 +44,12 @@ def load_subset(train=True, n_samples=1000, n_time_bins=90, seed=42):
     rng = np.random.default_rng(seed)
     indices = rng.choice(len(dataset), size=n_samples, replace=False)
 
-    X = []
-    y = []
-
+    X, y = [], []
     for count, i in enumerate(indices):
         events, label = dataset[int(i)]
         frames = events_to_frames(events, n_time_bins=n_time_bins)
         X.append(frames)
         y.append(label)
-
         if (count + 1) % 100 == 0:
             print(f"Loaded {count + 1}/{n_samples} samples")
 
@@ -63,41 +57,35 @@ def load_subset(train=True, n_samples=1000, n_time_bins=90, seed=42):
 
 
 def main():
+    # ---- Dataset config ----
     n_time_bins = 90
-    train_size = 60000
-    test_size = 10000
+    train_size  = 60000
+    test_size   = 10000
+
+    # ---- Paper-specified hyperparameters ----
     total_reservoir_size = 3600
-    n_partitions = 3
-    grid_shape = (10, 10, 12)
-    tau_v = 16.0
-    tau_u = 16.0
-    threshold = 20.0
-    reservoir_weight = 1.0
-    input_density = 0.02
-    input_weight = 1.0
-    lambda_param = 3.0
-    inter_partition_density = 0.001
-    inter_partition_weight = -1.0
+    n_partitions         = 3        # paper: 3 partitions is optimal for N-MNIST
+    grid_shape           = (10, 10, 12)  # 10*10*12 = 1200 per partition
+    threshold            = 20.0
+    tau_v                = 16.0
+    tau_u                = 16.0
+    reservoir_weight     = 1.0
+
+    # ---- Author's code hyperparameters (not in paper) ----
+    lambda_param          = 9.0    # author: lam=9
+    inh_fraction          = 0.2    # author: inh_fr=0.2
+    input_density         = 0.02
+    input_weight          = 1.0
+    inter_partition_weight= 1.0    # magnitude; always applied as inhibitory
 
     print("Loading train subset...")
-    X_train, y_train = load_subset(
-        train=True,
-        n_samples=train_size, # TODO 60000
-        n_time_bins=n_time_bins,
-        seed=SEED
-    )
+    X_train, y_train = load_subset(train=True,  n_samples=train_size, n_time_bins=n_time_bins, seed=SEED)
 
-    # TODO and this size
     print("Loading test subset...")
-    X_test, y_test = load_subset(
-        train=False,
-        n_samples=test_size, # TODO 10000
-        n_time_bins=n_time_bins,
-        seed=SEED
-    )
+    X_test,  y_test  = load_subset(train=False, n_samples=test_size,  n_time_bins=n_time_bins, seed=SEED)
 
     print("Train labels:", np.bincount(y_train, minlength=10))
-    print("Test labels:", np.bincount(y_test, minlength=10))
+    print("Test labels: ", np.bincount(y_test,  minlength=10))
 
     input_size = X_train.shape[-1]
     print("Input size:", input_size)
@@ -108,15 +96,15 @@ def main():
         total_reservoir_size=total_reservoir_size,
         n_partitions=n_partitions,
         grid_shape=grid_shape,
-        tau_v=tau_v,
-        tau_u=tau_u,
-        threshold=threshold,
-        reservoir_weight=reservoir_weight,
         input_density=input_density,
         input_weight=input_weight,
-        lambda_param=lambda_param,
-        inter_partition_density=inter_partition_density,
+        reservoir_weight=reservoir_weight,
         inter_partition_weight=inter_partition_weight,
+        lambda_param=lambda_param,
+        inh_fraction=inh_fraction,
+        threshold=threshold,
+        tau_v=tau_v,
+        tau_u=tau_u,
         seed=SEED,
     )
 
@@ -127,7 +115,7 @@ def main():
     Z_test = tepre.transform(X_test)
 
     print("Feature shape train:", Z_train.shape)
-    print("Feature shape test:", Z_test.shape)
+    print("Feature shape test: ", Z_test.shape)
 
     print("Training linear classifier...")
     clf = make_pipeline(
@@ -136,32 +124,33 @@ def main():
             max_iter=1000,
             n_jobs=-1,
             solver="lbfgs",
-            random_state=SEED
+            random_state=SEED,
         )
     )
     clf.fit(Z_train, y_train)
 
     preds = clf.predict(Z_test)
-    acc = accuracy_score(y_test, preds)
-
+    acc   = accuracy_score(y_test, preds)
     print(f"N-MNIST TEPRE accuracy: {acc * 100:.2f}%")
 
     results = {
-        "experiment": "nmnist-tepre",
-        "accuracy": float(acc),
+        "experiment":    "nmnist-tepre",
+        "accuracy":      float(acc),
         "train_samples": int(len(y_train)),
-        "test_samples": int(len(y_test)),
-        "seed": SEED,
-        "timestamp": datetime.now().isoformat(),
+        "test_samples":  int(len(y_test)),
+        "seed":          SEED,
+        "timestamp":     datetime.now().isoformat(),
         "model": {
-            "total_reservoir_size": total_reservoir_size,
-            "n_partitions": n_partitions,
-            "tau_v": tau_v,
-            "tau_u": tau_u,
-            "threshold": threshold,
-            "input_density": input_density,
-            "input_weight": input_weight,
-            "lambda_param": lambda_param,
+            "total_reservoir_size":  total_reservoir_size,
+            "n_partitions":          n_partitions,
+            "tau_v":                 tau_v,
+            "tau_u":                 tau_u,
+            "threshold":             threshold,
+            "lambda_param":          lambda_param,
+            "inh_fraction":          inh_fraction,
+            "input_density":         input_density,
+            "input_weight":          input_weight,
+            "inter_partition_weight":inter_partition_weight,
         }
     }
 

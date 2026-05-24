@@ -1,126 +1,129 @@
 import numpy as np
-from scipy.signal import fftconvolve
 from scipy.sparse import csr_matrix
 
-
-def build_gabor_filter_bank(n_filters=18, ksize=9, sigma=2.0, lam=4.0, gamma=0.5):
+def build_gabor_filter_bank(thetas, lambdas, ksize=5, sigma=10.0, gamma=0.5):
     """
-    Build a bank of 18 Gabor filters evenly spaced in orientation [0, pi).
+    Build a Gabor filter bank matching the author's implementation.
 
-    The paper references Gabor filters as texture discriminators (citation [14]:
-    Fogel & Sagi, 1989). A standard parameterisation is used here; the exact
-    sigma/lambda/gamma values are not given in the paper.
+    The author uses cv2.getGaborKernel with:
+        kernel_size = 5, sigma = 10.0, gamma = 0.5, phi = pi/2
+    and normalises each kernel by its L2 norm.
+    Each (theta, lambda) pair produces one filter that is stacked for both
+    polarities: shape (2, ksize, ksize).
+
+    The paper specifies 18 Gabor filters (citation [14]: Fogel & Sagi, 1989).
+    The author iterates over thetas × lambdas, so e.g. 9 thetas × 2 lambdas
+    = 18 filters total.  We reproduce that scheme here in pure numpy/scipy
+    (no OpenCV dependency) while exactly matching the kernel formula.
 
     Args:
-        n_filters:  number of orientations (paper specifies 18)
-        ksize:      kernel spatial size (ksize x ksize)
-        sigma:      Gaussian envelope standard deviation
-        lam:        sinusoid wavelength
-        gamma:      spatial aspect ratio
+        thetas:  list/array of orientations in degrees
+        lambdas: list/array of wavelengths
+        ksize:   kernel spatial size (author uses 5)
+        sigma:   Gaussian envelope std (author uses 10.0)
+        gamma:   spatial aspect ratio (author uses 0.5)
 
     Returns:
-        kernel_stack: (n_filters, ksize, ksize) float32 array
+        filters: (n_filters, 2, ksize, ksize) float32 array,
+                 where n_filters = len(thetas) * len(lambdas)
     """
-    thetas = np.linspace(0, np.pi, n_filters, endpoint=False)
-
+    phi = np.pi / 2  # phase offset, as in author's code
     half = ksize // 2
     x, y = np.meshgrid(np.arange(-half, half + 1), np.arange(-half, half + 1))
-    # shape: (ksize, ksize)
 
-    cos_t = np.cos(thetas)[:, None, None]   # (F, 1, 1)
-    sin_t = np.sin(thetas)[:, None, None]
+    filters = []
+    for theta_deg in thetas:
+        theta = np.radians(theta_deg)
+        for lam in lambdas:
+            x_rot =  x * np.cos(theta) + y * np.sin(theta)
+            y_rot = -x * np.sin(theta) + y * np.cos(theta)
 
-    x_rot =  x[None] * cos_t + y[None] * sin_t   # (F, ksize, ksize)
-    y_rot = -x[None] * sin_t + y[None] * cos_t
+            envelope = np.exp(-(x_rot**2 + gamma**2 * y_rot**2) / (2 * sigma**2))
+            carrier  = np.cos(2 * np.pi * x_rot / lam + phi)
+            kernel   = (envelope * carrier).astype(np.float64)
 
-    envelope = np.exp(-(x_rot**2 + gamma**2 * y_rot**2) / (2 * sigma**2))
-    carrier  = np.cos(2 * np.pi * x_rot / lam)
+            # L2-normalise, matching author's `kernel / np.linalg.norm(kernel)`
+            norm = np.linalg.norm(kernel)
+            if norm > 0:
+                kernel = kernel / norm
+            kernel = kernel.astype(np.float32)
 
-    kernels = (envelope * carrier).astype(np.float32)           # (F, ksize, ksize)
-    kernels -= kernels.mean(axis=(1, 2), keepdims=True)         # zero-mean each
+            # Stack for both polarities, matching author's torch.stack([g, g], dim=0)
+            filters.append(np.stack([kernel, kernel], axis=0))  # (2, ksize, ksize)
 
-    return kernels   # (n_filters, ksize, ksize)
+    return np.stack(filters, axis=0)  # (n_filters, 2, ksize, ksize)
 
 
-def apply_gabor_bank_to_sequence(x, sensor_shape=(34, 34, 2), kernels=None):
+def apply_gabor_bank(x_frame, kernels):
     """
-    Apply Gabor filter bank to an N-MNIST frame sequence.
-
-    Uses batched FFT convolution (numpy.fft.rfft2) over all frames and filters
-    simultaneously — one FFT per filter over the entire (T*polarities, H, W)
-    batch, which is significantly faster than per-frame convolution.
+    Apply Gabor filter bank to a single frame via FFT convolution.
 
     Args:
-        x:            (T, H*W*polarities) flattened frame sequence
-        sensor_shape: (H, W, polarities) — (34, 34, 2) for N-MNIST
-        kernels:      (n_filters, ksize, ksize) float32, from build_gabor_filter_bank
+        x_frame: (H, W, polarities) float32
+        kernels: (n_filters, 2, ksize, ksize) float32  [polarity-paired]
 
     Returns:
-        x_out: (T, H * W * polarities * n_filters) float32
+        (H, W, polarities * n_filters) float32
     """
     from numpy.fft import rfft2, irfft2
 
-    H, W, polarities = sensor_shape
-    T = x.shape[0]
+    H, W, polarities = x_frame.shape
     n_filters = kernels.shape[0]
 
-    # (T*polarities, H, W)
-    x_batch = x.reshape(T, H, W, polarities).transpose(0, 3, 1, 2).reshape(-1, H, W)
-    B = x_batch.shape[0]
+    # (polarities, H, W)
+    x_pol = x_frame.transpose(2, 0, 1).astype(np.float32)
+    X_f   = rfft2(x_pol, s=(H, W))  # (polarities, H, W//2+1)
 
-    # Pre-compute FFT of all input frames once: (B, H, W//2+1)
-    X_f = rfft2(x_batch, s=(H, W))
-
-    responses = np.empty((n_filters, B, H, W), dtype=np.float32)
-
+    out = np.empty((n_filters, polarities, H, W), dtype=np.float32)
     for f in range(n_filters):
-        # Zero-pad kernel to (H, W) and FFT
-        k_pad = np.zeros((H, W), dtype=np.float32)
-        kh, kw = kernels[f].shape
-        k_pad[:kh, :kw] = kernels[f]
-        K_f = rfft2(k_pad, s=(H, W))               # (H, W//2+1)
+        for p in range(polarities):
+            k_pad = np.zeros((H, W), dtype=np.float32)
+            kh, kw = kernels[f, p].shape
+            k_pad[:kh, :kw] = kernels[f, p]
+            K_f = rfft2(k_pad, s=(H, W))
+            resp = np.real(np.fft.irfft2(X_f[p] * K_f, s=(H, W))).astype(np.float32)
+            np.maximum(resp, 0.0, out=resp)  # half-wave rectify
+            out[f, p] = resp
 
-        resp = irfft2(X_f * K_f[None], s=(H, W)).astype(np.float32)  # (B, H, W)
-        np.maximum(resp, 0.0, out=resp)            # half-wave rectify in-place
-        responses[f] = resp
+    # (n_filters, polarities, H, W) -> (H, W, polarities * n_filters)
+    out = out.transpose(2, 3, 1, 0)          # (H, W, polarities, n_filters)
+    return out.reshape(H, W, polarities * n_filters)
 
-    # (n_filters, B, H, W) -> (B, H, W, n_filters) -> (T, pol, H, W, F) -> (T, H, W, pol*F)
-    responses = responses.transpose(1, 2, 3, 0)                   # (B, H, W, F)
-    responses = responses.reshape(T, polarities, H, W, n_filters)
-    responses = responses.transpose(0, 2, 3, 1, 4)                # (T, H, W, pol, F)
 
-    return responses.reshape(T, -1).astype(np.float32)
-
+# ---------------------------------------------------------------------------
+# MuLRE
+# ---------------------------------------------------------------------------
 
 class MuLRE:
     """
-    Multi-Length Scale Reservoir Ensemble.
+    Multi-Length Scale Reservoir Ensemble (MuLRE).
 
-    Paper-aligned implementation based on available information.
+    Paper-specified values are faithfully reproduced.  Values that the paper
+    leaves unspecified are taken from the author's reference implementation
+    (lsm_weight_definitions.py / lsm_models.py).
 
-    Paper-specified:
-    - Ensemble of LSM reservoirs
-    - Each reservoir uses different distance-bias parameter d
-    - For 3 reservoirs: d = {0, 4, 6}
-    - Reservoir is a 3D grid
-    - Recurrent probability:
-        P(i,j) = C * exp(-((D(i,j) - d) / lambda)^2)
-    - C values:
-        EE = 0.2, EI = 0.1, IE = 0.05, II = 0.3
-    - Half neurons excitatory, half inhibitory
-    - w_lsm = 1
-    - theta = 20
-    - tau_u = tau_v = 16 for N-MNIST
-    - MuLRE must use receptive-field input connections
-    - N-MNIST frames preprocessed by a bank of 18 Gabor filters
+    Paper:
+        - 3 reservoirs with d = {0, 4, 6} (2-reservoir: {0, 5})
+        - P(i,j) = C * exp(-((D(i,j) - d) / lambda)^2)   [Eq. 5]
+        - C: EE=0.2, EI=0.1, IE=0.05, II=0.3
+        - wlsm = 1  (excitatory +1, inhibitory -1)
+        - theta = 20, tau_u = tau_v = 16  (N-MNIST)
+        - 3-D reservoir grid, receptive-field input, 18 Gabor filters
 
-    Assumed / not fully specified:
-    - lambda_param
-    - input_density
-    - input_weight
-    - receptive-field window size
-    - Gabor filter hyperparameters (sigma, lambda, gamma, ksize)
-    - random seed
+    Author's code (unspecified in paper):
+        - lambda = 9
+        - D is squared Euclidean distance (not √D), used as -D/lambda
+          i.e. P = C * exp(-D_sq / lam)  for the *baseline* formula (Eq. 4)
+          For MuLRE Eq. 5 the author uses -(sqrt(D_sq) - d)^2 / lam
+        - inhibitory fraction = 0.2  (first 20 % of a random permutation)
+        - input connections: exactly floor(N * density) positive and the
+          same number of negative, chosen from a random shuffle of candidate
+          reservoir neurons (receptive-field window)
+        - receptive-field mapping: res_x = floor(x * Nx / inW)  (not round)
+          window clamped so it never exceeds [0, Nx)
+        - curr_prefac = 1 / tau_u multiplied into both W_in and W_lsm
+        - Gabor: ksize=5, sigma=10.0, gamma=0.5, phi=pi/2, L2-normalised;
+                 thetas (degrees) × lambdas grid → n_filters total
     """
 
     def __init__(
@@ -134,17 +137,18 @@ class MuLRE:
         input_density=0.02,
         input_weight=1.0,
         reservoir_weight=1.0,
-        lambda_param=3.0,
+        lambda_param=9.0,          # author uses 9
+        inh_fraction=0.2,          # author uses 0.2
         threshold=20.0,
         tau_v=16.0,
         tau_u=16.0,
         seed=42,
-        # Gabor filter bank
+        # Gabor parameters matching author's implementation
         use_gabor=True,
-        n_gabor_filters=18,
-        gabor_ksize=9,
-        gabor_sigma=2.0,
-        gabor_lam=4.0,
+        gabor_thetas=None,         # degrees; default: 9 values × 2 lambdas = 18
+        gabor_lambdas=None,
+        gabor_ksize=5,
+        gabor_sigma=10.0,
         gabor_gamma=0.5,
     ):
         if d_values is None:
@@ -160,290 +164,299 @@ class MuLRE:
             "total_reservoir_size must be divisible by n_reservoirs"
         )
 
-        self.input_shape = input_shape
-        self.use_gabor = use_gabor
-
-        if use_gabor:
-            self.gabor_kernels = build_gabor_filter_bank(
-                n_filters=n_gabor_filters,
-                ksize=gabor_ksize,
-                sigma=gabor_sigma,
-                lam=gabor_lam,
-                gamma=gabor_gamma,
-            )
-            H, W, polarities = input_shape
-            self.gabor_input_shape = (H, W, polarities * n_gabor_filters)
-            self.input_size = int(np.prod(self.gabor_input_shape))
-        else:
-            self.gabor_kernels = None
-            self.gabor_input_shape = input_shape
-            self.input_size = int(np.prod(input_shape))
-
+        self.input_shape     = input_shape
+        self.use_gabor       = use_gabor
+        self.lambda_param    = lambda_param
+        self.inh_fraction    = inh_fraction
+        self.threshold       = threshold
+        self.tau_v           = tau_v
+        self.tau_u           = tau_u
+        self.input_density   = input_density
+        self.input_weight    = input_weight
+        self.reservoir_weight= reservoir_weight
+        self.receptive_field_size = receptive_field_size
         self.total_reservoir_size = total_reservoir_size
-        self.n_reservoirs = n_reservoirs
-        self.reservoir_size = total_reservoir_size // n_reservoirs
+        self.n_reservoirs    = n_reservoirs
+        self.reservoir_size  = total_reservoir_size // n_reservoirs
+        self.grid_shape      = grid_shape
+        self.d_values        = d_values
 
         assert np.prod(grid_shape) == self.reservoir_size, (
-            f"grid_shape {grid_shape} must multiply to reservoir_size {self.reservoir_size}"
+            f"grid_shape {grid_shape} must multiply to reservoir_size "
+            f"{self.reservoir_size}"
         )
 
-        self.grid_shape = grid_shape
-        self.d_values = d_values
-        self.receptive_field_size = receptive_field_size
-
-        self.input_density = input_density
-        self.input_weight = input_weight
-        self.reservoir_weight = reservoir_weight
-        self.lambda_param = lambda_param
-
-        self.threshold = threshold
-        self.tau_v = tau_v
-        self.tau_u = tau_u
+        # curr_prefac is multiplied into weights (author: curr_prefac = 1/tau_u)
+        self.curr_prefac = np.float32(1.0 / tau_u)
 
         self.rng = np.random.default_rng(seed)
+        # The author uses np.random for shuffles inside weight init, so we
+        # seed the global numpy RNG for reproducibility.
+        np.random.seed(seed)
 
-        self.w_in_list = []
+        # ------------------------------------------------------------------
+        # Gabor filter bank
+        # ------------------------------------------------------------------
+        if use_gabor:
+            if gabor_thetas is None:
+                # 9 orientations × 2 wavelengths = 18 filters (paper: 18)
+                gabor_thetas  = [0, 20, 40, 60, 80, 100, 120, 140, 160]
+            if gabor_lambdas is None:
+                gabor_lambdas = [5.0, 10.0]
+
+            self.gabor_kernels = build_gabor_filter_bank(
+                thetas=gabor_thetas,
+                lambdas=gabor_lambdas,
+                ksize=gabor_ksize,
+                sigma=gabor_sigma,
+                gamma=gabor_gamma,
+            )  # (n_filters, 2, ksize, ksize)
+
+            n_filters = self.gabor_kernels.shape[0]
+            H, W, polarities = input_shape
+            self.gabor_out_shape = (H, W, polarities * n_filters)
+            self.input_size = int(np.prod(self.gabor_out_shape))
+        else:
+            self.gabor_kernels   = None
+            self.gabor_out_shape = input_shape
+            self.input_size      = int(np.prod(input_shape))
+
+        # ------------------------------------------------------------------
+        # Build weights for each reservoir
+        # ------------------------------------------------------------------
+        self.w_in_list  = []
         self.w_rec_list = []
 
-        for r, d in enumerate(self.d_values):
-            self.w_in_list.append(self._make_receptive_field_input_weights())
-            self.w_rec_list.append(self._make_distance_biased_reservoir_weights(d=d))
+        for d in self.d_values:
+            W_in, W_lsm = self._make_weights(d=d)
+            self.w_in_list.append(W_in)
+            self.w_rec_list.append(W_lsm)
 
-    # ------------------------------------------------------------------
-    # Reservoir geometry helpers
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Weight construction
+    # -----------------------------------------------------------------------
 
-    def _reservoir_coordinates(self):
-        nx, ny, nz = self.grid_shape
-        xs, ys, zs = np.meshgrid(
-            np.arange(nx), np.arange(ny), np.arange(nz), indexing="ij"
-        )
-        return np.stack([xs.ravel(), ys.ravel(), zs.ravel()], axis=1).astype(np.float32)
-
-    def _neuron_types(self):
-        is_exc = np.ones(self.reservoir_size, dtype=bool)
-        is_exc[self.reservoir_size // 2:] = False
-        return is_exc
-
-    def _connection_C_matrix(self):
-        is_exc = self._neuron_types()
-        src_exc = is_exc[:, None]
-        tgt_exc = is_exc[None, :]
-        C = np.zeros((self.reservoir_size, self.reservoir_size), dtype=np.float32)
-        C[ src_exc &  tgt_exc] = 0.2   # EE
-        C[ src_exc & ~tgt_exc] = 0.1   # EI
-        C[~src_exc &  tgt_exc] = 0.05  # IE
-        C[~src_exc & ~tgt_exc] = 0.3   # II
-        return C
-
-    # ------------------------------------------------------------------
-    # Weight constructors
-    # ------------------------------------------------------------------
-
-    def _make_distance_biased_reservoir_weights(self, d):
-        """P(i,j) = C * exp(-((D(i,j) - d) / lambda)^2)  [Eq. 5 in paper]"""
-        coords = self._reservoir_coordinates()
-        diff = coords[:, None, :] - coords[None, :, :]
-        distances = np.linalg.norm(diff, axis=-1)
-
-        C = self._connection_C_matrix()
-        probs = C * np.exp(-(((distances - d) / self.lambda_param) ** 2))
-        np.fill_diagonal(probs, 0.0)
-
-        mask = self.rng.random((self.reservoir_size, self.reservoir_size)) < probs
-
-        is_exc = self._neuron_types()
-        signs = np.ones((self.reservoir_size, self.reservoir_size), dtype=np.float32)
-        signs[~is_exc, :] = -1.0
-
-        W = mask * signs * self.reservoir_weight
-        np.fill_diagonal(W, 0.0)
-        return W.astype(np.float32)
-
-    def _make_receptive_field_input_weights(self):
+    def _make_weights(self, d):
         """
-        Vectorized receptive-field input weight construction.
+        Build receptive-field input weights and distance-biased recurrent
+        weights for one reservoir, then scale by curr_prefac.
 
-        Instead of looping over every (x, y, channel) input neuron, we:
-        1. Build a lookup table mapping each reservoir neuron to its (mapped_x, mapped_y).
-        2. For each spatial position in the input grid, find all candidate reservoir
-           neurons in one NumPy operation.
-        3. Assign connections for all channels at that position simultaneously.
+        Returns W_in as a CSR sparse matrix and W_lsm as a dense float32 array.
         """
-        H, W, n_channels = self.gabor_input_shape
-        nx, ny, _ = self.grid_shape
+        Nx, Ny, Nz = self.grid_shape
+        N = self.reservoir_size
+        H, W, n_channels = self.gabor_out_shape
+        window = self.receptive_field_size
+        in_size = self.input_size
 
-        reservoir_coords = self._reservoir_coordinates()
-        res_x = reservoir_coords[:, 0].astype(np.int32)
-        res_y = reservoir_coords[:, 1].astype(np.int32)
+        LqWin  = self.input_weight
+        LqWlsm = self.reservoir_weight
+        lam    = self.lambda_param
+        inh_fr = self.inh_fraction
 
-        half_w = self.receptive_field_size // 2
+        # ---- Input weights (receptive-field) --------------------------------
+        in_conn_range = int(N * self.input_density)
 
-        # Pre-map every input (x, y) to its reservoir (x, y)
-        ix_all = np.arange(W)
-        iy_all = np.arange(H)
-        mapped_ix = np.round((ix_all / max(W - 1, 1)) * (nx - 1)).astype(np.int32)
-        mapped_iy = np.round((iy_all / max(H - 1, 1)) * (ny - 1)).astype(np.int32)
+        W_in = np.zeros((in_size, N), dtype=np.float32)
 
-        # Collect COO entries for sparse construction then densify
-        rows_list = []
-        cols_list = []
-        vals_list = []
+        for i in range(in_size):
+            # Decode (ch, y, x) from flat input index
+            # Layout: (H, W, n_channels) flattened as H*W*n_channels
+            # i = (y * W + x) * n_channels + ch
+            ch = i % n_channels
+            hw = i // n_channels
+            x_in = hw % W
+            y_in = hw // W
 
-        for iy in range(H):
-            for ix in range(W):
-                mx, my = mapped_ix[ix], mapped_iy[iy]
+            # Map to reservoir (x, y) — author uses floor division
+            res_x = int((x_in * Nx) / W)
+            res_y = int((y_in * Ny) / H)
 
-                candidates = np.where(
-                    (np.abs(res_x - mx) <= half_w) &
-                    (np.abs(res_y - my) <= half_w)
-                )[0]
+            # Build window, clamped to [0, Nx) / [0, Ny) — author's logic
+            res_x_min = res_x - window // 2
+            if res_x_min < 0:
+                res_x_min = 0
+            res_x_max = res_x_min + window
+            if res_x_max > Nx:
+                res_x_max = Nx
+                res_x_min = Nx - window
 
-                if len(candidates) == 0:
-                    continue
+            res_y_min = res_y - window // 2
+            if res_y_min < 0:
+                res_y_min = 0
+            res_y_max = res_y_min + window
+            if res_y_max > Ny:
+                res_y_max = Ny
+                res_y_min = Ny - window
 
-                # For all n_channels at this (x, y): draw connections in one shot
-                # Shape of random draw: (n_channels, len(candidates))
-                rand = self.rng.random((n_channels, len(candidates)))
-                connected = rand < self.input_density   # bool mask
+            # All neuron indices in window across all Nz slices
+            window_locs = []
+            for j in range(window):
+                row_y = res_y_min + j
+                window_locs.append(row_y * Nx + np.arange(res_x_min, res_x_max))
+            window_idxs = np.concatenate(window_locs)
 
-                ch_idx, cand_idx = np.where(connected)
-                if len(ch_idx) == 0:
-                    continue
+            channel_locs = []
+            for k in range(Nz):
+                channel_locs.append(k * (Nx * Ny) + window_idxs)
+            input_perm_i = np.int32(np.concatenate(channel_locs))
 
-                # input flat index: (iy * W + ix) * n_channels + ch
-                input_rows = (iy * W + ix) * n_channels + ch_idx
-                reservoir_cols = candidates[cand_idx]
+            np.random.shuffle(input_perm_i)
+            pos_conn = input_perm_i[:in_conn_range]
+            neg_conn = input_perm_i[-in_conn_range:]
 
-                signs = self.rng.choice(
-                    np.array([-1.0, 1.0], dtype=np.float32), size=len(ch_idx)
-                )
+            W_in[i, pos_conn] =  LqWin
+            W_in[i, neg_conn] = -LqWin
 
-                rows_list.append(input_rows)
-                cols_list.append(reservoir_cols)
-                vals_list.append(signs * self.input_weight)
+        # ---- Recurrent weights (distance-biased, Eq. 5) -------------------
+        input_perm = np.arange(N)
+        np.random.shuffle(input_perm)
+        inh_range = int(inh_fr * N)  # first inh_range indices are inhibitory
 
-        W_mat = np.zeros((self.input_size, self.reservoir_size), dtype=np.float32)
-        if rows_list:
-            rows = np.concatenate(rows_list)
-            cols = np.concatenate(cols_list)
-            vals = np.concatenate(vals_list)
-            W_mat[rows, cols] = vals
+        W_lsm = np.zeros((N, N), dtype=np.float32)
 
-        return csr_matrix(W_mat)  # store sparse — ~2% density makes matmul ~50x faster
+        for i in range(N):
+            posti = input_perm[i]
+            zi = posti // (Nx * Ny)
+            yi = (posti - zi * Nx * Ny) // Nx
+            xi = (posti - zi * Nx * Ny) % Nx
 
-    # ------------------------------------------------------------------
-    # Simulation
-    # ------------------------------------------------------------------
+            for j in range(N):
+                prej = input_perm[j]
+                zj = prej // (Nx * Ny)
+                yj = (prej - zj * Nx * Ny) // Nx
+                xj = (prej - zj * Nx * Ny) % Nx
 
-    def _preprocess(self, x):
-        """Apply Gabor bank if enabled. x: (T, H*W*pol) -> (T, H*W*pol*n_filt)"""
+                # Squared Euclidean distance (author uses D, not sqrt(D))
+                D_sq = (xi - xj)**2 + (yi - yj)**2 + (zi - zj)**2
+                # Eq. 5: P = C * exp(-((sqrt(D) - d) / lambda)^2)
+                # Author's MuLRE variant (initWeights_short_long_dist_partition):
+                # P2 = C * exp(-((sqrt(D_sq) - d)^2) / lam)
+                dist = np.sqrt(D_sq)
+
+                if i < inh_range and j < inh_range:       # II
+                    P = 0.3 * np.exp(-((dist - d) ** 2) / lam)
+                    if np.random.uniform() < P:
+                        W_lsm[prej, posti] = -LqWlsm
+                elif i < inh_range and j >= inh_range:    # EI
+                    P = 0.1 * np.exp(-((dist - d) ** 2) / lam)
+                    if np.random.uniform() < P:
+                        W_lsm[prej, posti] =  LqWlsm
+                elif i >= inh_range and j < inh_range:    # IE
+                    P = 0.05 * np.exp(-((dist - d) ** 2) / lam)
+                    if np.random.uniform() < P:
+                        W_lsm[prej, posti] = -LqWlsm
+                else:                                      # EE
+                    P = 0.2 * np.exp(-((dist - d) ** 2) / lam)
+                    if np.random.uniform() < P:
+                        W_lsm[prej, posti] =  LqWlsm
+
+        np.fill_diagonal(W_lsm, 0.0)
+
+        # Scale by curr_prefac (author: curr_prefac * W before passing to model)
+        W_in_scaled  = np.float32(self.curr_prefac * W_in)
+        W_lsm_scaled = np.float32(self.curr_prefac * W_lsm)
+
+        # Transpose to match author's convention (W.T for torch nn.Linear compat)
+        # Then store W_in as sparse (rows = reservoir neurons, cols = input)
+        return csr_matrix(W_in_scaled.T), W_lsm_scaled.T
+
+    # -----------------------------------------------------------------------
+    # Preprocessing
+    # -----------------------------------------------------------------------
+
+    def _preprocess_sequence(self, x):
+        """
+        Apply Gabor bank to a sequence of frames.
+
+        Args:
+            x: (T, H*W*polarities) float32
+
+        Returns:
+            (T, H*W*polarities*n_filters) float32
+        """
         if not self.use_gabor:
             return x
-        return apply_gabor_bank_to_sequence(
-            x,
-            sensor_shape=self.input_shape,
-            kernels=self.gabor_kernels,
-        )
 
-    def _run_single_reservoir(self, x, w_in, w_rec):
-        """x: (T, input_size) -> spike_counts: (reservoir_size,)"""
-        v = np.zeros(self.reservoir_size, dtype=np.float32)
-        u = np.zeros(self.reservoir_size, dtype=np.float32)
-        spikes = np.zeros(self.reservoir_size, dtype=np.float32)
-        spike_counts = np.zeros(self.reservoir_size, dtype=np.float32)
+        H, W, polarities = self.input_shape
+        T = x.shape[0]
+        out = []
+        for t in range(T):
+            frame = x[t].reshape(H, W, polarities)
+            gabor_frame = apply_gabor_bank(frame, self.gabor_kernels)
+            out.append(gabor_frame.ravel())
+        return np.stack(out).astype(np.float32)
 
-        v_decay = 1.0 - 1.0 / self.tau_v
-        u_decay = 1.0 - 1.0 / self.tau_u
+    # -----------------------------------------------------------------------
+    # Simulation
+    # -----------------------------------------------------------------------
 
-        # Pre-compute all input projections at once: (T, reservoir_size)
-        # w_in is stored as a CSR sparse matrix (~2% density).
-        # Sparse matmul is ~50x faster than dense for this sparsity level.
-        input_projections = (x @ w_in).toarray() if hasattr(x @ w_in, 'toarray') else x @ w_in
-        # Cleaner: use the sparse matrix directly
-        input_projections = np.asarray(w_in.T.dot(x.T).T, dtype=np.float32)  # (T, res)
+    def _run_reservoir(self, x_proc, w_in, w_rec):
+        """
+        Run a single LIF reservoir and return total spike counts.
 
-        for t in range(x.shape[0]):
-            u = u_decay * u + input_projections[t] + spikes @ w_rec
-            v = v_decay * v + u
+        Args:
+            x_proc: (T, input_size) float32
+            w_in:   CSR sparse (reservoir_size, input_size)
+            w_rec:  dense float32 (reservoir_size, reservoir_size)
 
-            spikes = (v >= self.threshold).astype(np.float32)
-            v[spikes > 0] = 0.0
-            spike_counts += spikes
+        Returns:
+            spike_counts: (reservoir_size,) float32
+        """
+        N  = self.reservoir_size
+        v  = np.zeros(N, dtype=np.float32)
+        u  = np.zeros(N, dtype=np.float32)
+        spk= np.zeros(N, dtype=np.float32)
+        spike_counts = np.zeros(N, dtype=np.float32)
+
+        # Author: alpha = exp(-1/tau_u), beta = 1 - 1/tau_v
+        alpha   = np.float32(np.exp(-1.0 / self.tau_u))   # synaptic current decay
+        beta    = np.float32(1.0 - 1.0 / self.tau_v)      # membrane decay
+
+        # Pre-project all inputs: (T, N)  — w_in is (N, input_size)
+        input_proj = np.asarray(w_in.dot(x_proc.T).T, dtype=np.float32)  # (T, N)
+
+        for t in range(x_proc.shape[0]):
+            u   = alpha * u + input_proj[t] + spk @ w_rec
+            v   = beta  * v + u
+            spk = (v >= self.threshold).astype(np.float32)
+            v[spk > 0] = 0.0
+            spike_counts += spk
 
         return spike_counts
 
     def transform_one(self, x):
-        """x: (T, H*W*pol) -> (total_reservoir_size,)"""
-        x_proc = self._preprocess(x)
+        """
+        Transform a single sample.
+
+        Args:
+            x: (T, H*W*polarities)
+
+        Returns:
+            (total_reservoir_size,) float32
+        """
+        x_proc = self._preprocess_sequence(x)
         return np.concatenate([
-            self._run_single_reservoir(x_proc, w_in, w_rec)
+            self._run_reservoir(x_proc, w_in, w_rec)
             for w_in, w_rec in zip(self.w_in_list, self.w_rec_list)
         ])
 
-    def transform(self, X, chunk_size=500):
+    def transform(self, X, chunk_size=50):
         """
-        X: (N, T, H*W*pol) -> (N, total_reservoir_size)
-
-        Gabor features are computed in chunks to cap peak memory usage.
-        The full expanded representation (N * T * H * W * pol * n_filters)
-        is never materialised at once.
-
-        Peak RAM per chunk ~ chunk_size * T * pol * n_filters * H * W * 4 bytes
-            e.g. chunk_size=50: 50 * 90 * 2 * 18 * 34 * 34 * 4 ~ 200 MB
+        Transform a batch of samples.
 
         Args:
-            chunk_size: samples processed together. Lower = less memory.
-                        50 is safe well within 30 GB/core; raise if you want speed.
+            X:          (N, T, H*W*polarities)
+            chunk_size: number of samples to preprocess at once (memory cap)
+
+        Returns:
+            (N, total_reservoir_size) float32
         """
-        from numpy.fft import rfft2, irfft2
-
-        H, W, polarities = self.input_shape
-        N = len(X)
-        n_filters = self.gabor_kernels.shape[0] if self.use_gabor else 0
-
-        # Pre-compute kernel FFTs once - reused for every chunk
-        if self.use_gabor:
-            K_fs = []
-            for f in range(n_filters):
-                k_pad = np.zeros((H, W), dtype=np.float32)
-                kh, kw = self.gabor_kernels[f].shape
-                k_pad[:kh, :kw] = self.gabor_kernels[f]
-                K_fs.append(rfft2(k_pad, s=(H, W)))
-
         features = []
-        for start in range(0, N, chunk_size):
-            end = min(start + chunk_size, N)
-            chunk = X[start:end]  # (C, T, H*W*pol)
-            C, T, _ = chunk.shape
-
-            if self.use_gabor:
-                # (C*T*pol, H, W) - only this chunk in memory at once
-                x_all = (chunk.reshape(C * T, H, W, polarities)
-                         .transpose(0, 3, 1, 2)
-                         .reshape(-1, H, W))
-                X_f = rfft2(x_all, s=(H, W))
-
-                responses = np.empty((n_filters, x_all.shape[0], H, W), dtype=np.float32)
-                for f in range(n_filters):
-                    resp = irfft2(X_f * K_fs[f][None], s=(H, W)).astype(np.float32)
-                    np.maximum(resp, 0.0, out=resp)
-                    responses[f] = resp
-
-                # -> (C, T, H, W, pol, F) -> (C, T, H*W*pol*F)
-                responses = responses.transpose(1, 2, 3, 0)
-                responses = responses.reshape(C, T, polarities, H, W, n_filters)
-                responses = responses.transpose(0, 1, 3, 4, 2, 5)
-                chunk_proc = responses.reshape(C, T, -1).astype(np.float32)
-            else:
-                chunk_proc = chunk
-
-            for x in chunk_proc:
-                features.append(np.concatenate([
-                    self._run_single_reservoir(x, w_in, w_rec)
-                    for w_in, w_rec in zip(self.w_in_list, self.w_rec_list)
-                ]))
-
-            print(f"  Transformed {end}/{N} samples", flush=True)
-
+        total = len(X)
+        for start in range(0, total, chunk_size):
+            end = min(start + chunk_size, total)
+            for i, x in enumerate(X[start:end]):
+                features.append(self.transform_one(x))
+            print(f"  Transformed {end}/{total} samples", flush=True)
         return np.stack(features)
