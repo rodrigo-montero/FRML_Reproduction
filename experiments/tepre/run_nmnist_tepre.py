@@ -9,9 +9,7 @@ import tonic
 import random
 import json
 from datetime import datetime
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 from src.datasets.event_utils import events_to_frames
@@ -100,15 +98,7 @@ def run_seed(seed, X_train, y_train, X_test, y_test):
     Z_test = tepre.transform(X_test)
 
     print(f"  Training classifier (seed={seed})...")
-    clf = make_pipeline(
-        StandardScaler(),
-        LogisticRegression(
-            max_iter=1000,
-            n_jobs=-1,
-            solver="lbfgs",
-            random_state=seed,
-        )
-    )
+    clf = SGDClassifier(max_iter=10000, tol=1e-6, random_state=seed)
     clf.fit(Z_train, y_train)
 
     preds = clf.predict(Z_test)
@@ -131,7 +121,6 @@ def run_seed(seed, X_train, y_train, X_test, y_test):
         "seed":               seed,
         "accuracy":           float(acc),
         "per_class_accuracy": per_class_acc.tolist(),
-        "confusion_matrix":   cm.tolist(),
         "feature_stats":      feat_stats,
         "predictions":        preds,
     }
@@ -202,7 +191,6 @@ def main():
                 "seed":               r["seed"],
                 "accuracy":           r["accuracy"],
                 "per_class_accuracy": r["per_class_accuracy"],
-                "confusion_matrix":   r["confusion_matrix"],
                 "feature_stats":      r["feature_stats"],
             }
             for r in all_results
@@ -245,7 +233,6 @@ def main():
             PROJECT_ROOT / "results" / f"nmnist_tepre_seed{r['seed']}_predictions.npz",
             y_true=y_test,
             y_pred=r["predictions"],
-            confusion_matrix=np.array(r["confusion_matrix"]),
         )
 
     print("\nAll results saved.")

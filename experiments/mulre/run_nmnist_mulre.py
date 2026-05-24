@@ -9,10 +9,8 @@ import tonic
 import random
 import json
 from datetime import datetime
-from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 
 from src.datasets.event_utils import events_to_frames
 from src.models.mulre import MuLRE
