@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
 import numpy as np
@@ -10,7 +10,7 @@ import random
 import json
 from datetime import datetime
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score
 
 from src.datasets.event_utils import events_to_frames
 from src.models.mulre import MuLRE
@@ -22,7 +22,7 @@ SEEDS = [21, 42, 67]
 
 
 def save_results(results, filename):
-    results_dir = PROJECT_ROOT / "results"
+    results_dir = PROJECT_ROOT / "results" / "nmnist_mulre"
     results_dir.mkdir(exist_ok=True)
     path = results_dir / filename
     with open(path, "w") as f:
@@ -119,27 +119,12 @@ def run_seed(seed, X_train, y_train, X_test, y_test):
 
     preds = clf.predict(Z_test)
     acc   = accuracy_score(y_test, preds)
-    cm    = confusion_matrix(y_test, preds)
-
-    # Per-class accuracy (diagonal / row sums)
-    per_class_acc = cm.diagonal() / cm.sum(axis=1)
-
-    # Feature statistics (reservoir health indicators)
-    feat_stats = {
-        "mean_spike_count":     float(Z_train.mean()),
-        "max_spike_count":      float(Z_train.max()),
-        "nonzero_fraction":     float((Z_train > 0).mean()),
-        "dead_neuron_fraction": float((Z_train.max(axis=0) == 0).mean()),
-        "feature_std_mean":     float(Z_train.std(axis=0).mean()),
-    }
 
     print(f"  Seed {seed} accuracy: {acc * 100:.2f}%")
 
     return {
         "seed":               seed,
         "accuracy":           float(acc),
-        "per_class_accuracy": per_class_acc.tolist(),
-        "feature_stats":      feat_stats,
         "predictions":        preds,
     }
 
@@ -148,8 +133,10 @@ def main():
     n_time_bins = 90
     # train_size  = 60000
     # test_size   = 10000
-    train_size = 60
-    test_size = 100
+    # For testing!!!
+    train_size = 10
+    test_size = 10
+
     # ---- Multi-seed runs ----
     all_results = []
     for seed in SEEDS:
@@ -176,20 +163,6 @@ def main():
     max_acc    = float(np.max(accuracies))
     best_seed  = SEEDS[int(np.argmax(accuracies))]
 
-    # Per-class accuracy across seeds
-    per_class_accs  = np.array([r["per_class_accuracy"] for r in all_results])
-    mean_per_class  = per_class_accs.mean(axis=0).tolist()
-    std_per_class   = per_class_accs.std(axis=0).tolist()
-    worst_class     = int(np.argmin(mean_per_class))
-    best_class      = int(np.argmax(mean_per_class))
-
-    # Mean feature stats across seeds
-    feat_keys = all_results[0]["feature_stats"].keys()
-    mean_feat_stats = {
-        k: float(np.mean([r["feature_stats"][k] for r in all_results]))
-        for k in feat_keys
-    }
-
     print(f"\n{'='*55}")
     print(f"  MULTI-SEED SUMMARY  (N-MNIST MuLRE)")
     print(f"{'='*55}")
@@ -199,8 +172,6 @@ def main():
     print(f"  Mean ± Std:  {mean_acc*100:.2f}% ± {std_acc*100:.2f}%")
     print(f"  Min / Max:   {min_acc*100:.2f}% / {max_acc*100:.2f}%")
     print(f"  Best seed:   {best_seed}")
-    print(f"  Worst class (mean): digit {worst_class}  ({mean_per_class[worst_class]*100:.2f}%)")
-    print(f"  Best  class (mean): digit {best_class}   ({mean_per_class[best_class]*100:.2f}%)")
 
     # ---- Save ----
     summary = {
@@ -211,8 +182,6 @@ def main():
             {
                 "seed":               r["seed"],
                 "accuracy":           r["accuracy"],
-                "per_class_accuracy": r["per_class_accuracy"],
-                "feature_stats":      r["feature_stats"],
             }
             for r in all_results
         ],
@@ -222,11 +191,6 @@ def main():
             "min_accuracy":            min_acc,
             "max_accuracy":            max_acc,
             "best_seed":               best_seed,
-            "mean_per_class_accuracy": mean_per_class,
-            "std_per_class_accuracy":  std_per_class,
-            "worst_class":             worst_class,
-            "best_class":              best_class,
-            "mean_feature_stats":      mean_feat_stats,
         },
         "dataset": {
             "train_samples": int(len(y_train)),
@@ -256,7 +220,7 @@ def main():
     # Save per-seed predictions
     for r in all_results:
         np.savez(
-            PROJECT_ROOT / "results" / f"nmnist_mulre_seed{r['seed']}_predictions.npz",
+            PROJECT_ROOT / "results" / "nmnist_mulre" / f"nmnist_mulre_seed{r['seed']}_predictions.npz",
             y_true=y_test,
             y_pred=r["predictions"],
         )
