@@ -115,11 +115,11 @@ def run_seed(seed, X_train, y_train, X_test, y_test):
 
 def main():
     n_time_bins = 90
-    # train_size  = 60000
-    # test_size   = 10000
+    train_size  = 60000
+    test_size   = 10000
     # For testing!!!
-    train_size = 10
-    test_size = 10
+    # train_size = 10
+    # test_size = 10
     # ---- Multi-seed runs ----
     all_results = []
     for seed in SEEDS:
