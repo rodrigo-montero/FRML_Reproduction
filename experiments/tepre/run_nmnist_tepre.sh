@@ -1,6 +1,6 @@
 #!/bin/bash -l
 
-#SBATCH --job-name=nmnist-mulre
+#SBATCH --job-name=nmnist_tepre
 #SBATCH --time=06:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -27,4 +27,5 @@ echo "Testing imports:"
 python -c "import numpy, sklearn, tonic; print('imports ok')"
 
 echo "Starting experiment:"
-python experiments/run_nmnist_mulre.py
+
+python experiments/tepre/run_nmnist_tepre.py

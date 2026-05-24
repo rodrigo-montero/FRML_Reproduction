@@ -1,11 +1,11 @@
 #!/bin/bash -l
 
-#SBATCH --job-name=dvsgesture-lsm-receptive
-#SBATCH --time=010:00:00
+#SBATCH --job-name=nmnist-mulre
+#SBATCH --time=06:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=memory
-#SBATCH --mem-per-cpu=8GB
+#SBATCH --mem-per-cpu=30GB
 #SBATCH --account=education-eemcs-msc-dsait
 #SBATCH --output=/scratch/rmonterogonzal/FRML_Reproduction/logs/%x-%j.out
 #SBATCH --error=/scratch/rmonterogonzal/FRML_Reproduction/logs/%x-%j.err
@@ -27,4 +27,4 @@ echo "Testing imports:"
 python -c "import numpy, sklearn, tonic; print('imports ok')"
 
 echo "Starting experiment:"
-python experiments/run_dvsgesture_lsm_receptive.py
+python experiments/mulre/run_nmnist_mulre.py

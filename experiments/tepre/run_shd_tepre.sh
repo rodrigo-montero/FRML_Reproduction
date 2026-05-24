@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
-#SBATCH --job-name=dvsgesture-lsm-standard
-#SBATCH --time=010:00:00
+#SBATCH --job-name=shd_tepre
+#SBATCH --time=06:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=memory
@@ -27,5 +27,4 @@ echo "Testing imports:"
 python -c "import numpy, sklearn, tonic; print('imports ok')"
 
 echo "Starting experiment:"
-
-python experiments/run_dvsgesture_lsm_standard.py
+python experiments/tepre/run_shd_tepre.py
