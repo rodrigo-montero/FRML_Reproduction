@@ -1,0 +1,48 @@
+{
+    "experiment": "shd-tepre-multiseed",
+    "seeds": [
+        21,
+        42,
+        67
+    ],
+    "timestamp": "2026-05-29T23:06:49.135258",
+    "per_seed": [
+        {
+            "seed": 21,
+            "accuracy": 0.35247349823321555
+        },
+        {
+            "seed": 42,
+            "accuracy": 0.4386042402826855
+        },
+        {
+            "seed": 67,
+            "accuracy": 0.4500883392226148
+        }
+    ],
+    "aggregate": {
+        "mean_accuracy": 0.41372202591283863,
+        "std_accuracy": 0.04356227526432083,
+        "min_accuracy": 0.35247349823321555,
+        "max_accuracy": 0.4500883392226148,
+        "best_seed": 67
+    },
+    "dataset": {
+        "train_samples": 8156,
+        "test_samples": 2264,
+        "n_time_bins": 1000,
+        "input_size": 700
+    },
+    "model": {
+        "total_reservoir_size": 3000,
+        "n_partitions": 6,
+        "tau_v": 40.0,
+        "tau_u": 20.0,
+        "threshold": 20.0,
+        "lambda_param": 9.0,
+        "inh_fraction": 0.2,
+        "input_density": 0.02,
+        "input_weight": 1.0,
+        "inter_partition_weight": 1.0
+    }
+}
