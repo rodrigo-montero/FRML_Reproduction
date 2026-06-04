@@ -1,0 +1,17 @@
+{
+    "experiment": "dvsgesture-lsm-standard",
+    "accuracy": 0.5492424242424242,
+    "train_samples": 1077,
+    "test_samples": 264,
+    "seed": 21,
+    "timestamp": "2026-05-20T17:05:28.882614",
+    "model": {
+        "total_reservoir_size": 4000,
+        "tau_v": 5.0,
+        "tau_u": 10.0,
+        "threshold": 20.0,
+        "input_density": 0.02,
+        "input_weight": 1.0,
+        "lambda_param": 3.0
+    }
+}

@@ -1,35 +1,28 @@
 import numpy as np
+from scipy.sparse import csr_matrix
 
 
 class TEPRE:
     """
-    Temporal Excitation Partitioned Reservoir Ensemble.
+    Paper:
+        - Each partition reservoir receives input only during its time window
+        - Sparse inhibitory cross-partition connections
+        - P(i,j) = C * exp(-(D(i,j)/lambda)^2)   [Eq. 4, standard LSM]
+        - C: EE=0.2, EI=0.1, IE=0.05, II=0.3
+        - wlsm = 1; theta = 20; tau_u = tau_v = 16 (N-MNIST), (40,20) (SHD)
+        - Standard (non-receptive-field) input for TEPRE
 
-    Paper-aligned implementation based on available information.
-
-    Paper-specified:
-    - Reservoir split into temporal partitions
-    - Each partition receives input only during its assigned time window
-    - Sparse inhibitory connections between partition reservoirs
-    - LIF neurons with synaptic current u and membrane voltage v
-    - theta = 20
-    - dt = 1
-    - tau_u = tau_v = 16 for N-MNIST
-    - w_lsm = 1
-    - 3D reservoir grid
-    - distance-based recurrent probability:
-        P(i,j) = C * exp(-(D(i,j) / lambda)^2)
-    - C values:
-        EE = 0.2, EI = 0.1, IE = 0.05, II = 0.3
-    - standard input only for TEPRE
-
-    Assumed / not fully specified:
-    - input_density
-    - input_weight
-    - lambda_param
-    - inter_partition_density
-    - inter_partition connection direction
-    - random seed
+    Author's code (unspecified in paper):
+        - lambda = 9
+        - inhibitory fraction = 0.2 (first 20 % of a random permutation)
+        - input connections: exactly floor(partition_N * density) positive
+          and the same number negative, drawn from random shuffle
+        - the SAME W_lsm_part is reused for every partition (author builds
+          one partition weight matrix and tiles it block-diagonally)
+        - cross-partition inhibition: deterministic shift
+            W_long[i, (i + partition_N) % N] = -LqWlsm_long  for all i
+          (initWeights_partition_cross_partition_inh)
+        - curr_prefac = 1 / tau_u multiplied into W_in and W_lsm
     """
 
     def __init__(
@@ -41,268 +34,188 @@ class TEPRE:
         input_density=0.02,
         input_weight=1.0,
         reservoir_weight=1.0,
-        inter_partition_density=0.001,
-        inter_partition_weight=-1.0,
-        lambda_param=3.0,
+        inter_partition_weight=1.0,
+        lambda_param=9.0,
+        inh_fraction=0.2,
         threshold=20.0,
         tau_v=16.0,
         tau_u=16.0,
         seed=42,
     ):
-        assert total_reservoir_size % n_partitions == 0, (
-            "total_reservoir_size must be divisible by n_partitions"
-        )
-
-        self.input_size = input_size
+        self.input_size           = input_size
         self.total_reservoir_size = total_reservoir_size
-        self.n_partitions = n_partitions
-        self.partition_size = total_reservoir_size // n_partitions
+        self.n_partitions         = n_partitions
+        self.partition_size       = total_reservoir_size // n_partitions
+        self.grid_shape           = grid_shape
+        self.lambda_param         = lambda_param
+        self.inh_fraction         = inh_fraction
+        self.threshold            = threshold
+        self.tau_v                = tau_v
+        self.tau_u                = tau_u
+        self.input_density        = input_density
+        self.input_weight         = input_weight
+        self.reservoir_weight     = reservoir_weight
+        self.inter_partition_weight = inter_partition_weight
+        self.curr_prefac = np.float32(1.0 / tau_u)
 
-        assert np.prod(grid_shape) == self.partition_size, (
-            f"grid_shape {grid_shape} must multiply to partition_size "
-            f"{self.partition_size}"
-        )
+        np.random.seed(seed)
 
-        self.grid_shape = grid_shape
-        self.threshold = threshold
-        self.tau_v = tau_v
-        self.tau_u = tau_u
-        self.lambda_param = lambda_param
+        W_ins_raw, W_lsm_raw, W_long_raw = self._make_all_weights()
 
-        self.rng = np.random.default_rng(seed)
+        self.W_ins  = [np.float32(self.curr_prefac * w) for w in W_ins_raw]
+        W_lsm_total = np.float32(self.curr_prefac * (W_lsm_raw + W_long_raw))
 
-        self.w_in = self._make_input_weights(
-            density=input_density,
-            weight=input_weight,
-        )
+        self.W_rec = W_lsm_total.T
 
-        self.w_rec = self._make_distance_based_reservoir_weights(
-            weight=reservoir_weight,
-        )
-
-        self.w_inter = self._make_inter_partition_weights(
-            density=inter_partition_density,
-            weight=inter_partition_weight,
-        )
-
-        self.w_total = (self.w_rec + self.w_inter).astype(np.float32)
-
-    def _make_input_weights(self, density, weight):
+    def _make_all_weights(self):
         """
-        Standard input connections.
+        Build input, recurrent, and cross-partition inhibitory weights.
 
-        Each input neuron connects randomly to reservoir neurons.
-        We use equal positive and negative signs, following the paper's
-        standard input description.
-        """
-        mask = self.rng.random(
-            (self.input_size, self.total_reservoir_size)
-        ) < density
+        Follows initWeights_partition_cross_partition_inh from the author's
+        lsm_weight_definitions.py.
 
-        signs = self.rng.choice(
-            [-1.0, 1.0],
-            size=(self.input_size, self.total_reservoir_size),
-        )
-
-        return (mask * signs * weight).astype(np.float32)
-
-    def _partition_coordinates(self):
-        """
-        Create 3D coordinates for neurons inside one partition reservoir.
-        """
-        nx, ny, nz = self.grid_shape
-
-        coords = []
-        for x in range(nx):
-            for y in range(ny):
-                for z in range(nz):
-                    coords.append((x, y, z))
-
-        return np.array(coords, dtype=np.float32)
-
-    def _neuron_types(self):
-        """
-        First half excitatory, second half inhibitory.
         Returns:
-            True  = excitatory
-            False = inhibitory
+            W_ins:   list of n_partitions arrays (in_size, N)
+            W_lsm:   (N, N) block-diagonal recurrent matrix
+            W_long:  (N, N) cross-partition inhibitory shift matrix
         """
-        is_excitatory = np.ones(self.partition_size, dtype=bool)
-        is_excitatory[self.partition_size // 2:] = False
-        return is_excitatory
+        Nx, Ny, Nz = self.grid_shape
+        N           = self.total_reservoir_size
+        partition_N = self.partition_size
+        LqWin       = self.input_weight
+        LqWlsm      = self.reservoir_weight
+        LqWlsm_long = self.inter_partition_weight
+        lam         = self.lambda_param
+        inh_fr      = self.inh_fraction
+        in_size     = self.input_size
+        in_conn_range = int(partition_N * self.input_density)
 
-    def _connection_C_matrix(self):
-        """
-        Build C(i,j) matrix using the paper's constants.
+        W_in_part = np.zeros((in_size, partition_N), dtype=np.float32)
+        for i in range(in_size):
+            perm = np.arange(partition_N)
+            np.random.shuffle(perm)
+            pos_conn = perm[:in_conn_range]
+            neg_conn = perm[-in_conn_range:]
+            W_in_part[i, pos_conn] =  LqWin
+            W_in_part[i, neg_conn] = -LqWin
 
-        Source neuron type controls sign later.
-        C depends on source and target type.
+        W_ins = []
+        for part in range(self.n_partitions):
+            W_in = np.zeros((in_size, N), dtype=np.float32)
+            W_in[:, part * partition_N:(part + 1) * partition_N] = W_in_part
+            W_ins.append(W_in)
 
-        EE = source excitatory, target excitatory
-        EI = source excitatory, target inhibitory
-        IE = source inhibitory, target excitatory
-        II = source inhibitory, target inhibitory
-        """
-        is_exc = self._neuron_types()
+        input_perm = np.arange(partition_N)
+        np.random.shuffle(input_perm)
+        inh_range = int(inh_fr * partition_N)
 
-        source_exc = is_exc[:, None]
-        target_exc = is_exc[None, :]
+        Nz_part = Nz // self.n_partitions
+        W_lsm_part = np.zeros((partition_N, partition_N), dtype=np.float32)
 
-        C = np.zeros((self.partition_size, self.partition_size), dtype=np.float32)
+        for i in range(partition_N):
+            posti = input_perm[i]
+            zi = posti // (Nx * Ny)
+            yi = (posti - zi * Nx * Ny) // Nx
+            xi = (posti - zi * Nx * Ny) % Nx
 
-        C[source_exc & target_exc] = 0.2
-        C[source_exc & ~target_exc] = 0.1
-        C[~source_exc & target_exc] = 0.05
-        C[~source_exc & ~target_exc] = 0.3
+            for j in range(partition_N):
+                prej = input_perm[j]
+                zj = prej // (Nx * Ny)
+                yj = (prej - zj * Nx * Ny) // Nx
+                xj = (prej - zj * Nx * Ny) % Nx
 
-        return C
+                D = (xi - xj)**2 + (yi - yj)**2 + (zi - zj)**2
+                dist = np.sqrt(D)
 
-    def _make_single_partition_reservoir(self, weight):
-        """
-        Distance-based recurrent connectivity for one partition reservoir.
-        """
-        coords = self._partition_coordinates()
+                if i < inh_range and j < inh_range:        # II
+                    P = 0.3 * (np.exp(-dist / lam) ** 2)
+                    if np.random.uniform() < P:
+                        W_lsm_part[prej, posti] = -LqWlsm
+                elif i < inh_range and j >= inh_range:     # EI
+                    P = 0.1 * (np.exp(-dist / lam) ** 2)
+                    if np.random.uniform() < P:
+                        W_lsm_part[prej, posti] =  LqWlsm
+                elif i >= inh_range and j < inh_range:     # IE
+                    P = 0.05 * (np.exp(-dist / lam) ** 2)
+                    if np.random.uniform() < P:
+                        W_lsm_part[prej, posti] = -LqWlsm
+                else:                                       # EE
+                    P = 0.2 * (np.exp(-dist / lam) ** 2)
+                    if np.random.uniform() < P:
+                        W_lsm_part[prej, posti] =  LqWlsm
 
-        diff = coords[:, None, :] - coords[None, :, :]
-        distances = np.linalg.norm(diff, axis=-1)
+        np.fill_diagonal(W_lsm_part, 0.0)
 
-        C = self._connection_C_matrix()
+        W_lsm = np.zeros((N, N), dtype=np.float32)
+        for part in range(self.n_partitions):
+            s = part * partition_N
+            e = s + partition_N
+            W_lsm[s:e, s:e] = W_lsm_part
 
-        probabilities = C * np.exp(
-            -((distances / self.lambda_param) ** 2)
-        )
+        W_long = np.zeros((N, N), dtype=np.float32)
+        for i in range(N):
+            W_long[i, (i + partition_N) % N] = -LqWlsm_long
 
-        np.fill_diagonal(probabilities, 0.0)
-
-        mask = self.rng.random(
-            (self.partition_size, self.partition_size)
-        ) < probabilities
-
-        is_exc = self._neuron_types()
-
-        signs = np.ones((self.partition_size, self.partition_size), dtype=np.float32)
-        signs[~is_exc, :] = -1.0
-
-        W = mask * signs * weight
-        np.fill_diagonal(W, 0.0)
-
-        return W.astype(np.float32)
-
-    def _make_distance_based_reservoir_weights(self, weight):
-        """
-        Build block-diagonal recurrent matrix.
-        Each temporal partition has its own distance-based reservoir.
-        """
-        W = np.zeros(
-            (self.total_reservoir_size, self.total_reservoir_size),
-            dtype=np.float32,
-        )
-
-        for p in range(self.n_partitions):
-            start = p * self.partition_size
-            end = start + self.partition_size
-
-            W[start:end, start:end] = self._make_single_partition_reservoir(
-                weight=weight
-            )
-
-        return W
-
-    def _make_inter_partition_weights(self, density, weight):
-        """
-        Sparse inhibitory connections between successive partition reservoirs.
-
-        The paper says these are very sparse inhibitory connections.
-        Exact sparsity and direction are not specified.
-
-        Assumption:
-        - feed-forward inhibitory connections from partition p to p+1.
-        """
-        W = np.zeros(
-            (self.total_reservoir_size, self.total_reservoir_size),
-            dtype=np.float32,
-        )
-
-        for p in range(self.n_partitions - 1):
-            src_start = p * self.partition_size
-            src_end = src_start + self.partition_size
-
-            tgt_start = (p + 1) * self.partition_size
-            tgt_end = tgt_start + self.partition_size
-
-            mask = self.rng.random(
-                (self.partition_size, self.partition_size)
-            ) < density
-
-            W[src_start:src_end, tgt_start:tgt_end] = mask * weight
-
-        return W.astype(np.float32)
-
-    def _partition_mask_for_time(self, t, n_time_bins):
-        """
-        Only one partition receives external input at timestep t.
-        """
-        partition_id = min(
-            int(t / n_time_bins * self.n_partitions),
-            self.n_partitions - 1,
-        )
-
-        mask = np.zeros(self.total_reservoir_size, dtype=np.float32)
-
-        start = partition_id * self.partition_size
-        end = start + self.partition_size
-
-        mask[start:end] = 1.0
-        return mask
+        return W_ins, W_lsm, W_long
 
     def transform_one(self, x):
         """
-        x shape: (time_bins, input_size)
+        Run the TEPRE on a single sample.
+
+        Args:
+            x: (T, input_size) float32
 
         Returns:
-            spike-count feature vector of shape (total_reservoir_size,)
+            spike_counts: (total_reservoir_size,) float32
         """
-        n_time_bins = x.shape[0]
+        T  = x.shape[0]
+        N  = self.total_reservoir_size
+        partition_N    = self.partition_size
+        partition_steps = T // self.n_partitions
 
-        v = np.zeros(self.total_reservoir_size, dtype=np.float32)
-        u = np.zeros(self.total_reservoir_size, dtype=np.float32)
-        spikes = np.zeros(self.total_reservoir_size, dtype=np.float32)
-        spike_counts = np.zeros(self.total_reservoir_size, dtype=np.float32)
+        v  = np.zeros(N, dtype=np.float32)
+        u  = np.zeros(N, dtype=np.float32)
+        spk= np.zeros(N, dtype=np.float32)
+        spike_counts = np.zeros(N, dtype=np.float32)
 
-        voltage_decay = 1.0 - (1.0 / self.tau_v)
-        current_decay = 1.0 - (1.0 / self.tau_u)
+        alpha = np.float32(np.exp(-1.0 / self.tau_u))
+        beta  = np.float32(1.0 - 1.0 / self.tau_v)
 
-        for t in range(n_time_bins):
-            partition_mask = self._partition_mask_for_time(t, n_time_bins)
+        input_projs = []
+        for p in range(self.n_partitions):
+            proj = x @ self.W_ins[p]  # (T, N)
+            input_projs.append(proj.astype(np.float32))
 
-            input_current = (x[t] @ self.w_in) * partition_mask
-            recurrent_current = spikes @ self.w_total
+        Win_ind = 0
+        for t in range(T):
+            if t % partition_steps == 0 and Win_ind < self.n_partitions:
+                current_proj = input_projs[Win_ind]
+                Win_ind = min(Win_ind + 1, self.n_partitions - 1)
 
-            u = current_decay * u + input_current + recurrent_current
-            v = voltage_decay * v + u
+            inp = current_proj[t]
 
-            spikes = (v >= self.threshold).astype(np.float32)
+            if t >= partition_steps:
+                pass
 
-            # Reset membrane voltage after spike.
-            v[spikes > 0] = 0.0
-
-            spike_counts += spikes
+            u    = alpha * u + inp + spk @ self.W_rec
+            v    = beta  * v + u
+            spk  = (v >= self.threshold).astype(np.float32)
+            v[spk > 0] = 0.0
+            spike_counts += spk
 
         return spike_counts
 
     def transform(self, X):
         """
-        X shape: (n_samples, time_bins, input_size)
+        Args:
+            X: (n_samples, T, input_size)
 
         Returns:
-            feature matrix of shape (n_samples, total_reservoir_size)
+            (n_samples, total_reservoir_size) float32
         """
         features = []
-
         for i, x in enumerate(X):
             features.append(self.transform_one(x))
-
             if (i + 1) % 100 == 0:
-                print(f"Transformed {i + 1}/{len(X)} samples")
-
+                print(f"  Transformed {i + 1}/{len(X)} samples", flush=True)
         return np.stack(features)

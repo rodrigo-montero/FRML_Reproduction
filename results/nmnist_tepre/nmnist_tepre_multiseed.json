@@ -1,0 +1,47 @@
+{
+    "experiment": "nmnist-tepre-multiseed",
+    "seeds": [
+        21,
+        42,
+        67
+    ],
+    "timestamp": "2026-05-30T07:49:40.348874",
+    "per_seed": [
+        {
+            "seed": 21,
+            "accuracy": 0.3659
+        },
+        {
+            "seed": 42,
+            "accuracy": 0.3273
+        },
+        {
+            "seed": 67,
+            "accuracy": 0.3136
+        }
+    ],
+    "aggregate": {
+        "mean_accuracy": 0.33560000000000006,
+        "std_accuracy": 0.022143321039687497,
+        "min_accuracy": 0.3136,
+        "max_accuracy": 0.3659,
+        "best_seed": 21
+    },
+    "dataset": {
+        "train_samples": 60000,
+        "test_samples": 10000,
+        "n_time_bins": 90
+    },
+    "model": {
+        "total_reservoir_size": 3600,
+        "n_partitions": 3,
+        "tau_v": 16.0,
+        "tau_u": 16.0,
+        "threshold": 20.0,
+        "lambda_param": 9.0,
+        "inh_fraction": 0.2,
+        "input_density": 0.02,
+        "input_weight": 1.0,
+        "inter_partition_weight": 1.0
+    }
+}

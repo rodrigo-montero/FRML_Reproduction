@@ -1,0 +1,55 @@
+{
+    "experiment": "nmnist-mulre-multiseed",
+    "seeds": [
+        21,
+        42,
+        67
+    ],
+    "timestamp": "2026-06-04T13:09:54.050971",
+    "per_seed": [
+        {
+            "seed": 21,
+            "accuracy": 0.9622
+        },
+        {
+            "seed": 42,
+            "accuracy": 0.9456
+        },
+        {
+            "seed": 67,
+            "accuracy": 0.9618
+        }
+    ],
+    "aggregate": {
+        "mean_accuracy": 0.9565,
+        "std_accuracy": 0.77,
+        "min_accuracy": 0.9456,
+        "max_accuracy": 0.9622,
+        "best_seed": 21
+    },
+    "dataset": {
+        "train_samples": 30000,
+        "test_samples": 5000,
+        "n_time_bins": 90
+    },
+    "model": {
+        "total_reservoir_size": 3600,
+        "n_reservoirs": 3,
+        "d_values": [
+            0,
+            4,
+            6
+        ],
+        "tau_v": 16.0,
+        "tau_u": 16.0,
+        "threshold": 20.0,
+        "lambda_param": 9.0,
+        "inh_fraction": 0.2,
+        "input_density": 0.02,
+        "receptive_field_size": 6,
+        "gabor_filters": 18,
+        "gabor_ksize": 5,
+        "gabor_sigma": 10.0,
+        "gabor_gamma": 0.5
+    }
+}
