@@ -48,7 +48,7 @@ def load_subset(train=True, n_samples=1000, n_time_bins=90, seed=42):
         )
         X.append(frames)
         y.append(label)
-        if (count + 1) % 100 == 0:
+        if (count + 1) % 1000 == 0:
             print(f"  Loaded {count + 1}/{len(indices)} samples")
 
     return np.stack(X), np.array(y)
@@ -131,8 +131,8 @@ def run_seed(seed, X_train, y_train, X_test, y_test):
 
 def main():
     n_time_bins = 90
-    train_size  = 60000
-    test_size   = 10000
+    train_size  = 30000
+    test_size   = 5000
     # For testing!!!
     # train_size = 10
     # test_size = 10

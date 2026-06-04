@@ -1,11 +1,11 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=shd_tepre
-#SBATCH --time=06:00:00
+#SBATCH --time=18:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=memory
-#SBATCH --mem-per-cpu=8GB
+#SBATCH --mem-per-cpu=30GB
 #SBATCH --account=education-eemcs-msc-dsait
 #SBATCH --output=/scratch/rmonterogonzal/FRML_Reproduction/logs/%x-%j.out
 #SBATCH --error=/scratch/rmonterogonzal/FRML_Reproduction/logs/%x-%j.err

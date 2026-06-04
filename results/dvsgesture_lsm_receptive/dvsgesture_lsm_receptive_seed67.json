@@ -1,10 +1,10 @@
 {
-    "experiment": "dvsgesture-lsm-standard",
-    "accuracy": 0.7462121212121212,
+    "experiment": "dvsgesture-lsm-receptive",
+    "accuracy": 0.4318181818181818,
     "train_samples": 1077,
     "test_samples": 264,
-    "seed": 42,
-    "timestamp": "2026-05-06T20:02:28.612716",
+    "seed": 67,
+    "timestamp": "2026-05-20T17:27:56.677255",
     "model": {
         "total_reservoir_size": 4000,
         "tau_v": 5.0,
