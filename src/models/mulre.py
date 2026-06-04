@@ -3,19 +3,6 @@ from scipy.sparse import csr_matrix
 
 def build_gabor_filter_bank(thetas, lambdas, ksize=5, sigma=10.0, gamma=0.5):
     """
-    Build a Gabor filter bank matching the author's implementation.
-
-    The author uses cv2.getGaborKernel with:
-        kernel_size = 5, sigma = 10.0, gamma = 0.5, phi = pi/2
-    and normalises each kernel by its L2 norm.
-    Each (theta, lambda) pair produces one filter that is stacked for both
-    polarities: shape (2, ksize, ksize).
-
-    The paper specifies 18 Gabor filters (citation [14]: Fogel & Sagi, 1989).
-    The author iterates over thetas × lambdas, so e.g. 9 thetas × 2 lambdas
-    = 18 filters total.  We reproduce that scheme here in pure numpy/scipy
-    (no OpenCV dependency) while exactly matching the kernel formula.
-
     Args:
         thetas:  list/array of orientations in degrees
         lambdas: list/array of wavelengths
@@ -27,7 +14,7 @@ def build_gabor_filter_bank(thetas, lambdas, ksize=5, sigma=10.0, gamma=0.5):
         filters: (n_filters, 2, ksize, ksize) float32 array,
                  where n_filters = len(thetas) * len(lambdas)
     """
-    phi = np.pi / 2  # phase offset, as in author's code
+    phi = np.pi / 2
     half = ksize // 2
     x, y = np.meshgrid(np.arange(-half, half + 1), np.arange(-half, half + 1))
 
@@ -42,13 +29,11 @@ def build_gabor_filter_bank(thetas, lambdas, ksize=5, sigma=10.0, gamma=0.5):
             carrier  = np.cos(2 * np.pi * x_rot / lam + phi)
             kernel   = (envelope * carrier).astype(np.float64)
 
-            # L2-normalise, matching author's `kernel / np.linalg.norm(kernel)`
             norm = np.linalg.norm(kernel)
             if norm > 0:
                 kernel = kernel / norm
             kernel = kernel.astype(np.float32)
 
-            # Stack for both polarities, matching author's torch.stack([g, g], dim=0)
             filters.append(np.stack([kernel, kernel], axis=0))  # (2, ksize, ksize)
 
     return np.stack(filters, axis=0)  # (n_filters, 2, ksize, ksize)
@@ -70,9 +55,8 @@ def apply_gabor_bank(x_frame, kernels):
     H, W, polarities = x_frame.shape
     n_filters = kernels.shape[0]
 
-    # (polarities, H, W)
     x_pol = x_frame.transpose(2, 0, 1).astype(np.float32)
-    X_f   = rfft2(x_pol, s=(H, W))  # (polarities, H, W//2+1)
+    X_f   = rfft2(x_pol, s=(H, W))
 
     out = np.empty((n_filters, polarities, H, W), dtype=np.float32)
     for f in range(n_filters):
@@ -82,25 +66,16 @@ def apply_gabor_bank(x_frame, kernels):
             k_pad[:kh, :kw] = kernels[f, p]
             K_f = rfft2(k_pad, s=(H, W))
             resp = np.real(np.fft.irfft2(X_f[p] * K_f, s=(H, W))).astype(np.float32)
-            np.maximum(resp, 0.0, out=resp)  # half-wave rectify
+            np.maximum(resp, 0.0, out=resp)
             out[f, p] = resp
 
-    # (n_filters, polarities, H, W) -> (H, W, polarities * n_filters)
-    out = out.transpose(2, 3, 1, 0)          # (H, W, polarities, n_filters)
+    out = out.transpose(2, 3, 1, 0)
     return out.reshape(H, W, polarities * n_filters)
 
-
-# ---------------------------------------------------------------------------
-# MuLRE
-# ---------------------------------------------------------------------------
 
 class MuLRE:
     """
     Multi-Length Scale Reservoir Ensemble (MuLRE).
-
-    Paper-specified values are faithfully reproduced.  Values that the paper
-    leaves unspecified are taken from the author's reference implementation
-    (lsm_weight_definitions.py / lsm_models.py).
 
     Paper:
         - 3 reservoirs with d = {0, 4, 6} (2-reservoir: {0, 5})
@@ -112,9 +87,6 @@ class MuLRE:
 
     Author's code (unspecified in paper):
         - lambda = 9
-        - D is squared Euclidean distance (not √D), used as -D/lambda
-          i.e. P = C * exp(-D_sq / lam)  for the *baseline* formula (Eq. 4)
-          For MuLRE Eq. 5 the author uses -(sqrt(D_sq) - d)^2 / lam
         - inhibitory fraction = 0.2  (first 20 % of a random permutation)
         - input connections: exactly floor(N * density) positive and the
           same number of negative, chosen from a random shuffle of candidate
@@ -137,15 +109,14 @@ class MuLRE:
         input_density=0.02,
         input_weight=1.0,
         reservoir_weight=1.0,
-        lambda_param=9.0,          # author uses 9
-        inh_fraction=0.2,          # author uses 0.2
+        lambda_param=9.0,
+        inh_fraction=0.2,
         threshold=20.0,
         tau_v=16.0,
         tau_u=16.0,
         seed=42,
-        # Gabor parameters matching author's implementation
         use_gabor=True,
-        gabor_thetas=None,         # degrees; default: 9 values × 2 lambdas = 18
+        gabor_thetas=None,
         gabor_lambdas=None,
         gabor_ksize=5,
         gabor_sigma=10.0,
@@ -158,11 +129,6 @@ class MuLRE:
                 d_values = [0, 4, 6]
             else:
                 d_values = list(range(n_reservoirs))
-
-        assert len(d_values) == n_reservoirs
-        assert total_reservoir_size % n_reservoirs == 0, (
-            "total_reservoir_size must be divisible by n_reservoirs"
-        )
 
         self.input_shape     = input_shape
         self.use_gabor       = use_gabor
@@ -180,26 +146,12 @@ class MuLRE:
         self.reservoir_size  = total_reservoir_size // n_reservoirs
         self.grid_shape      = grid_shape
         self.d_values        = d_values
-
-        assert np.prod(grid_shape) == self.reservoir_size, (
-            f"grid_shape {grid_shape} must multiply to reservoir_size "
-            f"{self.reservoir_size}"
-        )
-
-        # curr_prefac is multiplied into weights (author: curr_prefac = 1/tau_u)
         self.curr_prefac = np.float32(1.0 / tau_u)
-
         self.rng = np.random.default_rng(seed)
-        # The author uses np.random for shuffles inside weight init, so we
-        # seed the global numpy RNG for reproducibility.
         np.random.seed(seed)
 
-        # ------------------------------------------------------------------
-        # Gabor filter bank
-        # ------------------------------------------------------------------
         if use_gabor:
             if gabor_thetas is None:
-                # 9 orientations × 2 wavelengths = 18 filters (paper: 18)
                 gabor_thetas  = [0, 20, 40, 60, 80, 100, 120, 140, 160]
             if gabor_lambdas is None:
                 gabor_lambdas = [5.0, 10.0]
@@ -210,7 +162,7 @@ class MuLRE:
                 ksize=gabor_ksize,
                 sigma=gabor_sigma,
                 gamma=gabor_gamma,
-            )  # (n_filters, 2, ksize, ksize)
+            )
 
             n_filters = self.gabor_kernels.shape[0]
             H, W, polarities = input_shape
@@ -221,9 +173,6 @@ class MuLRE:
             self.gabor_out_shape = input_shape
             self.input_size      = int(np.prod(input_shape))
 
-        # ------------------------------------------------------------------
-        # Build weights for each reservoir
-        # ------------------------------------------------------------------
         self.w_in_list  = []
         self.w_rec_list = []
 
@@ -231,10 +180,6 @@ class MuLRE:
             W_in, W_lsm = self._make_weights(d=d)
             self.w_in_list.append(W_in)
             self.w_rec_list.append(W_lsm)
-
-    # -----------------------------------------------------------------------
-    # Weight construction
-    # -----------------------------------------------------------------------
 
     def _make_weights(self, d):
         """
@@ -254,25 +199,19 @@ class MuLRE:
         lam    = self.lambda_param
         inh_fr = self.inh_fraction
 
-        # ---- Input weights (receptive-field) --------------------------------
         in_conn_range = int(N * self.input_density)
 
         W_in = np.zeros((in_size, N), dtype=np.float32)
 
         for i in range(in_size):
-            # Decode (ch, y, x) from flat input index
-            # Layout: (H, W, n_channels) flattened as H*W*n_channels
-            # i = (y * W + x) * n_channels + ch
             ch = i % n_channels
             hw = i // n_channels
             x_in = hw % W
             y_in = hw // W
 
-            # Map to reservoir (x, y) — author uses floor division
             res_x = int((x_in * Nx) / W)
             res_y = int((y_in * Ny) / H)
 
-            # Build window, clamped to [0, Nx) / [0, Ny) — author's logic
             res_x_min = res_x - window // 2
             if res_x_min < 0:
                 res_x_min = 0
@@ -289,7 +228,6 @@ class MuLRE:
                 res_y_max = Ny
                 res_y_min = Ny - window
 
-            # All neuron indices in window across all Nz slices
             window_locs = []
             for j in range(window):
                 row_y = res_y_min + j
@@ -308,10 +246,9 @@ class MuLRE:
             W_in[i, pos_conn] =  LqWin
             W_in[i, neg_conn] = -LqWin
 
-        # ---- Recurrent weights (distance-biased, Eq. 5) -------------------
         input_perm = np.arange(N)
         np.random.shuffle(input_perm)
-        inh_range = int(inh_fr * N)  # first inh_range indices are inhibitory
+        inh_range = int(inh_fr * N)
 
         W_lsm = np.zeros((N, N), dtype=np.float32)
 
@@ -327,43 +264,32 @@ class MuLRE:
                 yj = (prej - zj * Nx * Ny) // Nx
                 xj = (prej - zj * Nx * Ny) % Nx
 
-                # Squared Euclidean distance (author uses D, not sqrt(D))
                 D_sq = (xi - xj)**2 + (yi - yj)**2 + (zi - zj)**2
-                # Eq. 5: P = C * exp(-((sqrt(D) - d) / lambda)^2)
-                # Author's MuLRE variant (initWeights_short_long_dist_partition):
-                # P2 = C * exp(-((sqrt(D_sq) - d)^2) / lam)
                 dist = np.sqrt(D_sq)
 
-                if i < inh_range and j < inh_range:       # II
-                    P = 0.3 * np.exp(-((dist - d) ** 2) / lam)
+                if i < inh_range and j < inh_range:
+                    P = 0.3 * (np.exp(-((dist - d)) / lam) ** 2)
                     if np.random.uniform() < P:
                         W_lsm[prej, posti] = -LqWlsm
-                elif i < inh_range and j >= inh_range:    # EI
-                    P = 0.1 * np.exp(-((dist - d) ** 2) / lam)
+                elif i < inh_range and j >= inh_range:
+                    P = 0.1 * (np.exp(-((dist - d)) / lam) ** 2)
                     if np.random.uniform() < P:
                         W_lsm[prej, posti] =  LqWlsm
-                elif i >= inh_range and j < inh_range:    # IE
-                    P = 0.05 * np.exp(-((dist - d) ** 2) / lam)
+                elif i >= inh_range and j < inh_range:
+                    P = 0.05 * (np.exp(-((dist - d)) / lam) ** 2)
                     if np.random.uniform() < P:
                         W_lsm[prej, posti] = -LqWlsm
-                else:                                      # EE
-                    P = 0.2 * np.exp(-((dist - d) ** 2) / lam)
+                else:
+                    P = 0.2 * (np.exp(-((dist - d)) / lam) ** 2)
                     if np.random.uniform() < P:
                         W_lsm[prej, posti] =  LqWlsm
 
         np.fill_diagonal(W_lsm, 0.0)
 
-        # Scale by curr_prefac (author: curr_prefac * W before passing to model)
         W_in_scaled  = np.float32(self.curr_prefac * W_in)
         W_lsm_scaled = np.float32(self.curr_prefac * W_lsm)
 
-        # Transpose to match author's convention (W.T for torch nn.Linear compat)
-        # Then store W_in as sparse (rows = reservoir neurons, cols = input)
         return csr_matrix(W_in_scaled.T), W_lsm_scaled.T
-
-    # -----------------------------------------------------------------------
-    # Preprocessing
-    # -----------------------------------------------------------------------
 
     def _preprocess_sequence(self, x):
         """
@@ -387,10 +313,6 @@ class MuLRE:
             out.append(gabor_frame.ravel())
         return np.stack(out).astype(np.float32)
 
-    # -----------------------------------------------------------------------
-    # Simulation
-    # -----------------------------------------------------------------------
-
     def _run_reservoir(self, x_proc, w_in, w_rec):
         """
         Run a single LIF reservoir and return total spike counts.
@@ -409,11 +331,9 @@ class MuLRE:
         spk= np.zeros(N, dtype=np.float32)
         spike_counts = np.zeros(N, dtype=np.float32)
 
-        # Author: alpha = exp(-1/tau_u), beta = 1 - 1/tau_v
-        alpha   = np.float32(np.exp(-1.0 / self.tau_u))   # synaptic current decay
-        beta    = np.float32(1.0 - 1.0 / self.tau_v)      # membrane decay
+        alpha   = np.float32(np.exp(-1.0 / self.tau_u))
+        beta    = np.float32(1.0 - 1.0 / self.tau_v)
 
-        # Pre-project all inputs: (T, N)  — w_in is (N, input_size)
         input_proj = np.asarray(w_in.dot(x_proc.T).T, dtype=np.float32)  # (T, N)
 
         for t in range(x_proc.shape[0]):
