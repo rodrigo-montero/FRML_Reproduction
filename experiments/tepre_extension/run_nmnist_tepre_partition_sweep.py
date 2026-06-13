@@ -23,7 +23,7 @@ SEEDS = [21, 42, 67]
 GRID_SHAPES = {
     1: (10, 10, 36),   # partition_size = 3600
     2: (10, 10, 18),   # partition_size = 1800
-    3: (10, 10, 12),   # partition_size = 1200 — same as teammates
+    3: (10, 10, 12),   # partition_size = 1200
     4: (10, 10, 9),    # partition_size = 900
     5: (10, 12, 6),    # partition_size = 720
     6: (10, 10, 6),    # partition_size = 600
@@ -61,6 +61,10 @@ def load_data(n_time_bins=90, train_size=60000, test_size=10000):
     X_train, y_train = load_subset(dataset_train, train_size)
     print("Loading test data...")
     X_test, y_test = load_subset(dataset_test, test_size)
+
+    print(f"Train labels: {np.bincount(y_train, minlength=10)}")
+    print(f"Test labels:  {np.bincount(y_test, minlength=10)}")
+    print(f"Input size:   {X_train.shape[-1]}")
 
     return X_train, y_train, X_test, y_test
 

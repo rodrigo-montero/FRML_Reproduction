@@ -7,15 +7,15 @@
 #SBATCH --partition=memory
 #SBATCH --mem-per-cpu=30GB
 #SBATCH --account=education-eemcs-msc-dsait
-#SBATCH --output=/scratch/%u/FRML_Reproduction/logs/%x-%j.out
-#SBATCH --error=/scratch/%u/FRML_Reproduction/logs/%x-%j.err
+#SBATCH --output=/scratch/tjsorobka/FRML_Reproduction/logs/%x-%j.out
+#SBATCH --error=/scratch/tjsorobka/FRML_Reproduction/logs/%x-%j.err
 
 module purge
 module load 2025
 module load python
 module load gettext
 
-cd /scratch/$USER/FRML_Reproduction
+cd /scratch/tjsorobka/FRML_Reproduction
 
 source .venv/bin/activate
 
