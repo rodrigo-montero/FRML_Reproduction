@@ -28,4 +28,4 @@ python -c "import numpy, sklearn, tonic; print('imports ok')"
 
 echo "Starting experiment: n_partitions=2"
 
-python experiments/extension/run_nmnist_tepre_partition_sweep.py 2
+python experiments/tepre_extension/run_nmnist_tepre_partition_sweep.py 2
