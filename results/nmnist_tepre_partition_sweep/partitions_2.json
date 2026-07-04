@@ -1,0 +1,49 @@
+{
+    "experiment": "nmnist-tepre-partition-sweep",
+    "n_partitions": 2,
+    "seeds": [
+        21,
+        42,
+        67
+    ],
+    "timestamp": "2026-06-14T07:28:14.833475",
+    "per_seed": [
+        {
+            "seed": 21,
+            "accuracy": 0.4858
+        },
+        {
+            "seed": 42,
+            "accuracy": 0.4437
+        },
+        {
+            "seed": 67,
+            "accuracy": 0.4108
+        }
+    ],
+    "mean_accuracy": 0.4467666666666667,
+    "std_accuracy": 0.03069531270767937,
+    "min_accuracy": 0.4108,
+    "max_accuracy": 0.4858,
+    "dataset": {
+        "train_samples": 60000,
+        "test_samples": 10000,
+        "n_time_bins": 90
+    },
+    "model": {
+        "total_reservoir_size": 3600,
+        "grid_shape": [
+            10,
+            10,
+            18
+        ],
+        "tau_v": 16.0,
+        "tau_u": 16.0,
+        "threshold": 20.0,
+        "lambda_param": 9.0,
+        "inh_fraction": 0.2,
+        "input_density": 0.02,
+        "input_weight": 1.0,
+        "inter_partition_weight": 1.0
+    }
+}
